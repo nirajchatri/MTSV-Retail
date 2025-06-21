@@ -1,10 +1,10 @@
-# AnwarFood APK Build Information
+# mtsvretail APK Build Information
 
 ## 📱 Latest Build Details
 
 **Build Date:** May 27, 2025  
 **Version:** 1.0.1 (Build 2)  
-**Package:** com.anwarfood.app
+**Package:** com.mtsvretail.app
 
 ## 📦 APK Files Generated
 
@@ -26,7 +26,7 @@
 - **Target Android Version:** 14 (API 34)
 - **Architecture:** Universal APK (supports all devices)
 - **Permissions:** Internet, Network State
-- **Network Security:** HTTPS only, configured for anwarfood.onrender.com
+- **Network Security:** HTTPS only, configured for mtsvretail.onrender.com
 
 ## 🌐 API Configuration
 

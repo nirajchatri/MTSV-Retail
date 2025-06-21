@@ -1,4 +1,4 @@
-# AnwarFood Mobile App - APK Installation Guide
+# mtsvretail Mobile App - APK Installation Guide
 
 ## 📱 APK Files Generated
 
@@ -51,7 +51,7 @@ The app is configured to connect to: **http://192.168.29.96:3000**
    - Try opening a web browser and visiting http://192.168.29.96:3000
 
 2. **Clear App Data:**
-   - Go to Settings > Apps > AnwarFood
+   - Go to Settings > Apps > mtsvretail
    - Tap "Storage" > "Clear Data"
    - Restart the app
 
@@ -102,7 +102,7 @@ To test if the API is working:
 
 ## 🆔 App Details
 
-- **Package Name:** com.anwarfood.app
+- **Package Name:** com.mtsvretail.app
 - **Version:** 1.0.0
 - **Version Code:** 1
 

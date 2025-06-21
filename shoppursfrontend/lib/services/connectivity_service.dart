@@ -66,7 +66,7 @@ class ConnectivityService {
       return ConnectivityStatus(
         hasInternet: true,
         isApiReachable: false,
-        message: 'Cannot connect to AnwarFood servers. Please try again later.',
+        message: 'Cannot connect to mtsvretail servers. Please try again later.',
       );
     }
 
