@@ -18,14 +18,14 @@ async function generateInvoicePDF({ order, orderItems, invoiceNumber, purchaseSu
 
     // Use default values if no settings found
     const settings = appSettings[0] || {
-      company_name: 'Areeva Products & Services Pvt. Ltd.',
-      company_address: 'Hari Nagar, New Delhi, Delhi 110058, India',
-      support_number: '9810162596',
-      support_email: 'shop.westdelhi@shoppurs.in',
-      gstin: '07AAPCA4055P1Z3',
+      company_name: 'MTSV Foods Industries Private Limited',
+      company_address: 'Iconic Corenthum, 1312 Floor, Noida Electronic City, UP 201301, India',
+      support_number: '9816820635',
+      support_email: 'team@mtsvretail.com',
+      gstin: '03AAQCM9163K1ZX',
       company_logo_url: null,
       invoice_note: null,
-      invoice_footer_text: 'Thank you for shopping at Shoppurs.\nIn case you would like to Exchange any of the products purchased, we request you to carry your bill along.',
+      invoice_footer_text: 'Thank you for shopping at MTSV Retail.\nIn case you would like to Exchange any of the products purchased, we request you to carry your bill along.',
       invoice_prefix: 'INV',
       default_currency: '₹',
       tax_label_cgst: 'CGST',
