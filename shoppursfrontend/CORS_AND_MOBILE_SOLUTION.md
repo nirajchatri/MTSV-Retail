@@ -4,7 +4,7 @@
 
 ### Problem:
 ```
-Access to fetch at 'https://api.shoppurs.in/api/auth/login' from origin 'http://localhost:65109' has been blocked by CORS policy
+Access to fetch at 'https://api.mtsvretail.com/api/auth/login' from origin 'http://localhost:65109' has been blocked by CORS policy
 ```
 
 ### ✅ Solution Applied:
@@ -13,13 +13,13 @@ Access to fetch at 'https://api.shoppurs.in/api/auth/login' from origin 'http://
    ```javascript
    const corsOptions = {
      origin: [
-       'https://api.shoppurs.in',
+       'https://api.mtsvretail.com',
        'http://localhost:65109',
        'http://localhost:8080',
        'http://127.0.0.1:3000',
        'http://127.0.0.1:65109',
        'http://127.0.0.1:8080',
-       'https://api.shoppurs.in',
+       'https://api.mtsvretail.com',
      ],
      credentials: true,
      optionsSuccessStatus: 200,
@@ -91,7 +91,7 @@ Access to fetch at 'https://api.shoppurs.in/api/auth/login' from origin 'http://
 #### If App Shows "No Internet Connection":
 
 1. **Check Device Internet:**
-   - Open browser and visit https://api.shoppurs.in
+   - Open browser and visit https://api.mtsvretail.com
    - Should show: `{"success":true,"message":"Welcome to shoppursshop API","version":"1.0.0"}`
 
 2. **Clear App Data:**
@@ -108,7 +108,7 @@ Access to fetch at 'https://api.shoppurs.in/api/auth/login' from origin 'http://
 #### If App Shows "Cannot Connect to shoppursshop Servers":
 
 1. **Check Server Status:**
-   - Visit https://api.shoppurs.in/health
+   - Visit https://api.mtsvretail.com/health
    - Should return server status
 
 2. **Check Firewall/VPN:**
@@ -139,8 +139,8 @@ Access to fetch at 'https://api.shoppurs.in/api/auth/login' from origin 'http://
 ### Startup Logs (Mobile):
 ```
 === SERVICE URL VERIFICATION ===
-API Config Base URL: https://api.shoppurs.in
-HTTP Client Base URL: https://api.shoppurs.in
+API Config Base URL: https://api.mtsvretail.com
+HTTP Client Base URL: https://api.mtsvretail.com
 ...
 === CONNECTIVITY CHECK ===
 Internet Connection: ✅ Available
@@ -183,8 +183,8 @@ Startup Connectivity Status: Connected successfully
 4. **App Crashes:** Use debug APK, check logs with `adb logcat`
 
 ### Contact Information:
-- Check server status: https://api.shoppurs.in/health
-- API documentation: https://api.shoppurs.in/
+- Check server status: https://api.mtsvretail.com/health
+- API documentation: https://api.mtsvretail.com/
 - Debug logs: Use debug APK with `adb logcat | grep flutter`
 
 ---

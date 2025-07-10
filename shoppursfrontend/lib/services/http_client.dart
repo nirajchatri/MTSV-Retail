@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'error_handler.dart';
 
 class HttpClient {
-  static const String baseUrl = 'https://api.shoppurs.in';
+  static const String baseUrl = 'https://api.mtsvretail.com';
   static const Duration timeoutDuration = Duration(seconds: 30);
 
   static http.Client _client = http.Client();

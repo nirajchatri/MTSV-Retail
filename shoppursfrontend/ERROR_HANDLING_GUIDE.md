@@ -108,7 +108,7 @@ if (_hasError) {
 
 ### Before (Raw Server Errors)
 ```
-SocketException: Failed host lookup: '192.168.29.96'
+SocketException: Failed host lookup: 'api.mtsvretail.com'
 Internal Server Error: Cannot read property 'id' of undefined
 Database connection timeout after 30000ms
 ```
