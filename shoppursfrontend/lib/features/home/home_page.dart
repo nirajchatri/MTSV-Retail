@@ -70,7 +70,7 @@ class _HomePageState extends State<HomePage> {
   String? _addressError;
   bool _isLoadingLocation = false;
   String? _locationError;
-  String _appName = 'SHOPPURS APP'; // Default name until loaded
+  String _appName = 'MTSVRETAIL APP'; // Default name until loaded
   String? _selectedRetailerPhone;
   
   // DWR related variables

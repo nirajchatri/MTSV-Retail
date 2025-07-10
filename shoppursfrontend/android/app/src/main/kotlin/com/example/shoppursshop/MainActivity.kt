@@ -1,4 +1,4 @@
-package com.shoppursshop
+package com.mtsvretail
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -1,8 +1,8 @@
-CREATE DATABASE  IF NOT EXISTS `shoppurs` /*!40100 DEFAULT CHARACTER SET latin1 */ /*!80016 DEFAULT ENCRYPTION='N' */;
-USE `shoppurs`;
+CREATE DATABASE  IF NOT EXISTS `MTSV Retail` /*!40100 DEFAULT CHARACTER SET latin1 */ /*!80016 DEFAULT ENCRYPTION='N' */;
+USE `MTSV Retail`;
 -- MySQL dump 10.13  Distrib 8.0.42, for Win64 (x86_64)
 --
--- Host: 127.0.0.1    Database: shoppurs
+-- Host: 127.0.0.1    Database: MTSV Retail
 -- ------------------------------------------------------
 -- Server version	9.2.0
 

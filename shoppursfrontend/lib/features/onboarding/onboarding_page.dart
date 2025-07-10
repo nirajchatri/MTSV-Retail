@@ -23,7 +23,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
             Column(
               children: [
                 Text(
-                  'Shoppurs Shop',
+                  'MTSV Retail',
                   style: TextStyle(
                     fontSize: 32,
                     fontWeight: FontWeight.bold,

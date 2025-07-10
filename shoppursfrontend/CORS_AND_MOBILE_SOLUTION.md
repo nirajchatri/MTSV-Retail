@@ -48,7 +48,7 @@ Access to fetch at 'https://api.mtsvretail.com/api/auth/login' from origin 'http
 
 3. **Test CORS Fix:**
    ```bash
-   cd shoppursshop
+   cd mtsvretail
    flutter run -d chrome
    ```
 
@@ -92,10 +92,10 @@ Access to fetch at 'https://api.mtsvretail.com/api/auth/login' from origin 'http
 
 1. **Check Device Internet:**
    - Open browser and visit https://api.mtsvretail.com
-   - Should show: `{"success":true,"message":"Welcome to shoppursshop API","version":"1.0.0"}`
+   - Should show: `{"success":true,"message":"Welcome to MTSV Retail API","version":"1.0.0"}`
 
 2. **Clear App Data:**
-   - Settings → Apps → shoppursshop → Storage → Clear Data
+   - Settings → Apps → MTSV Retail → Storage → Clear Data
 
 3. **Check Network Type:**
    - Try switching between WiFi and mobile data
@@ -105,7 +105,7 @@ Access to fetch at 'https://api.mtsvretail.com/api/auth/login' from origin 'http
    - Install `app-debug.apk` for detailed logs
    - Use `adb logcat` to see error messages
 
-#### If App Shows "Cannot Connect to shoppursshop Servers":
+#### If App Shows "Cannot Connect to MTSV Retail Servers":
 
 1. **Check Server Status:**
    - Visit https://api.mtsvretail.com/health
@@ -153,7 +153,7 @@ Startup Connectivity Status: Connected successfully
 ```json
 {
   "success": true,
-  "message": "shoppursshop API is running",
+  "message": "MTSV Retail API is running",
   "timestamp": "2025-05-27T...",
   "environment": "production"
 }
@@ -168,7 +168,7 @@ Startup Connectivity Status: Connected successfully
 4. Test endpoints manually
 
 ### For Frontend Updates:
-1. Update code in `shoppursshop/`
+1. Update code in `MTSV Retail/`
 2. Run `flutter clean && flutter pub get`
 3. Build APK: `flutter build apk --release`
 4. Test on device before distribution

@@ -14,7 +14,7 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.shoppursshop"
+    namespace = "com.mtsvretail"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -30,7 +30,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.shoppursshop"
+        applicationId = "com.mtsvretail"
         minSdk = 21
         targetSdk = 34
         versionCode = 90

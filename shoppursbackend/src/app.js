@@ -125,7 +125,7 @@ app.use('/uploads', express.static('uploads'));
 app.get('/health', (req, res) => {
   res.json({
     success: true,
-    message: 'AnwarFood API is running',
+    message: 'MTSV Retail API is running',
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || 'development'
   });
@@ -135,7 +135,7 @@ app.get('/health', (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     success: true,
-    message: 'Welcome to AnwarFood API',
+    message: 'Welcome to MTSV Retail API',
     version: '1.0.0'
   });
 });

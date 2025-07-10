@@ -1,4 +1,4 @@
-# Shoppurs Shop Grocery Delivery App
+# MTSV Retail Grocery Delivery App
 
 A full-fledged Flutter frontend application for grocery delivery, featuring a modern onboarding experience.
 

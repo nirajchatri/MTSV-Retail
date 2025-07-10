@@ -286,7 +286,7 @@ class _PaymentPageState extends State<PaymentPage> {
     var options = {
       'key': 'rzp_test_TXLp8WEhaRbLG8', // Replace with your Razorpay Key ID
       'amount': orderData['amount'],
-      'name': 'Shoppurs Shop',
+      'name': 'MTSV Retail',
       'description': 'Online Shopping Payment',
       'order_id': orderData['orderId'],
       'prefill': {

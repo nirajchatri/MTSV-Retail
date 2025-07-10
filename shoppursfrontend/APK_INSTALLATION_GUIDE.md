@@ -1,4 +1,4 @@
-# shoppursshop Mobile App - APK Installation Guide
+# MTSV Retailshop Mobile App - APK Installation Guide
 
 ## 📱 APK Files Generated
 
@@ -51,7 +51,7 @@ The app is configured to connect to: **https://api.mtsvretail.com**
    - Try opening a web browser and visiting https://api.mtsvretail.com
 
 2. **Clear App Data:**
-   - Go to Settings > Apps > shoppursshop
+   - Go to Settings > Apps > MTSV Retail
    - Tap "Storage" > "Clear Data"
    - Restart the app
 
@@ -102,7 +102,7 @@ To test if the API is working:
 
 ## 🆔 App Details
 
-- **Package Name:** com.shoppursshop.app
+- **Package Name:** com.mtsvretail.app
 - **Version:** 1.0.0
 - **Version Code:** 1
 

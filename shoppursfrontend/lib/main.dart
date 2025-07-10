@@ -86,16 +86,16 @@ void main() async {
     print('🔥 Firebase Messaging initialization failed: $e');
   }
   
-  runApp(const ShoppursShopApp());
+  runApp(const MtsvRetailApp());
 }
 
-class ShoppursShopApp extends StatelessWidget {
-  const ShoppursShopApp({Key? key}) : super(key: key);
+class MtsvRetailApp extends StatelessWidget {
+  const MtsvRetailApp({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Shoppurs Shop',
+      title: 'MTSV Retail',
       theme: ThemeData(
         primarySwatch: Colors.red,
         fontFamily: 'Poppins',

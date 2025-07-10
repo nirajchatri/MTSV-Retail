@@ -20,7 +20,7 @@ require('dotenv').config();
 //   host: '127.0.0.1',
 //   user: 'root',
 //   password: 'defaultpassword',
-//   database: 'shoppurs',
+//   database: 'MTSV Retail',
 //   port: 3306,
 //   connectionLimit: 5,
 //   queueLimit: 0,

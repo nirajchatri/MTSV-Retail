@@ -1,4 +1,4 @@
-# Anwar Food Backend - Render Deployment Guide
+# MTSV Retail Backend - Render Deployment Guide
 
 ## Prerequisites
 1. A Render account (sign up at https://render.com)
@@ -19,7 +19,7 @@
 2. Click "New +" and select "Web Service"
 3. Connect your Git repository
 4. Configure the service:
-   - **Name**: `anwarfood-backend`
+   - **Name**: `mtsvretail-backend`
    - **Environment**: `Node`
    - **Build Command**: `npm install`
    - **Start Command**: `npm start`
@@ -38,7 +38,7 @@ In your Render service settings, add these environment variables:
 DB_HOST=your_database_host
 DB_USER=your_database_user  
 DB_PASSWORD=your_database_password
-DB_NAME=shoppurs
+DB_NAME=MTSV Retail_mtsv
 JWT_SECRET=your_secure_jwt_secret_key
 NODE_ENV=production
 PORT=10000

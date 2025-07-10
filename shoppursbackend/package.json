@@ -1,7 +1,7 @@
 {
-  "name": "anwarfoodbackend",
+  "name": "mtsvretailbackend",
   "version": "1.0.0",
-  "description": "Backend API for Shoppurs Foods",
+  "description": "Backend API for MTSV Retail Foods",
   "main": "src/app.js",
   "scripts": {
     "start": "node src/app.js",

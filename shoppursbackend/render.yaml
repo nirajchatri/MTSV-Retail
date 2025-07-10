@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: anwarfood-backend
+    name: MTSV Retail-backend
     env: node
     plan: free
     buildCommand: npm install

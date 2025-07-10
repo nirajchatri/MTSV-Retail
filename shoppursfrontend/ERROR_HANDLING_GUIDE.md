@@ -1,6 +1,6 @@
 # Error Handling System Documentation
 
-This document describes the new comprehensive error handling system implemented in the shoppurs Food application.
+This document describes the new comprehensive error handling system implemented in the mtsvretail Food application.
 
 ## Overview
 

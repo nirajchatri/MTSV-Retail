@@ -33,10 +33,10 @@ INSERT INTO `app_settings` (
   `default_currency`, `tax_label_cgst`, `tax_label_sgst`, `payment_terms_text`
 ) 
 SELECT 
-  'Anwar Food', '9810162596', 'shop.westdelhi@shoppurs.in', 
-  'Areeva Products & Services Pvt. Ltd.',
-  'Hari Nagar, New Delhi, Delhi 110058, India',
-  '07AAPCA4055P1Z3',
-  'Thank you for shopping at Shoppurs.\nIn case you would like to Exchange any of the products purchased, we request you to carry your bill along.',
+  'MTSV Retail', '9810162596', 'team@mtsvretail.com', 
+  'MTSV Foods Industries Pvt. Ltd.',
+  'Iconic Corenthum, 1312 Floor, Noida Electronic City, UP 201301, India',
+  '03AAQCM9163K1ZX',
+  'Thank you for shopping at MTSV Retail.\nIn case you would like to Exchange any of the products purchased, we request you to carry your bill along.',
   'INV', '₹', 'CGST', 'SGST', 'Payment Method: Cash'
 WHERE NOT EXISTS (SELECT 1 FROM `app_settings`); 
