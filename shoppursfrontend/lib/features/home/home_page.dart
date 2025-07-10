@@ -23,6 +23,8 @@ import 'package:http/http.dart' as http;
 
 import '../../config/api_config.dart';
 import '../../widgets/common_bottom_navbar.dart';
+import '../../services/notification_service.dart';
+import 'package:flutter/services.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({Key? key}) : super(key: key);
@@ -1486,7 +1488,7 @@ class _HomePageState extends State<HomePage> {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(12),
                   child: Image.network(
-                    '${ApiConfig.baseUrl}/uploads/advertising/${item['image_url']}',
+                    item['image_url'],
                     fit: BoxFit.cover,
                     errorBuilder: (context, error, stackTrace) =>
                         const Center(child: Icon(Icons.error)),
@@ -1896,7 +1898,7 @@ class _HomePageState extends State<HomePage> {
                               ClipRRect(
                                 borderRadius: BorderRadius.circular(18),
                                 child: Image.network(
-                                  '${ApiConfig.baseUrl}/uploads/category/${cat.imageUrl}',
+                                  cat.imageUrl,
                                   width: double.infinity,
                                   height: 70,
                                   fit: BoxFit.cover,
@@ -1959,7 +1961,7 @@ class _HomePageState extends State<HomePage> {
                         return ClipRRect(
                           borderRadius: BorderRadius.circular(12),
                           child: Image.network(
-                            '${ApiConfig.baseUrl}/uploads/brands/${brand['image_url']}',
+                            brand['image_url'],
                             fit: BoxFit.contain,
                             errorBuilder: (context, error, stackTrace) =>
                                 const Icon(Icons.image_not_supported, size: 38, color: Colors.grey),
@@ -2029,7 +2031,7 @@ class _HomePageState extends State<HomePage> {
                                           ? ClipRRect(
                                               borderRadius: BorderRadius.circular(8),
                                               child: Image.network(
-                                                '${ApiConfig.baseUrl}/uploads/products/${prod['PROD_IMAGE_1']}',
+                                                prod['PROD_IMAGE_1'],
                                                 width: 38,
                                                 height: 38,
                                                 fit: BoxFit.cover,
@@ -2161,6 +2163,8 @@ class _HomePageState extends State<HomePage> {
       ),
     );
   }
+
+
 
 
 

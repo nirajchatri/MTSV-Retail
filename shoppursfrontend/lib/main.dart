@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'features/onboarding/onboarding_page.dart';
 import 'features/auth/signup_page.dart';
 import 'features/auth/login_page.dart';
@@ -33,14 +35,31 @@ import 'features/admin/category_management_page.dart';
 import 'features/admin/user_management_page.dart';
 import 'features/admin/create_user_page.dart';
 import 'features/admin/user_details_page.dart';
+import 'features/admin/low_stock_products_page.dart';
+import 'features/common/customer_leads_page.dart';
 import 'startup_page.dart';
 import 'debug_helper.dart';
 import 'services/http_client.dart';
 import 'services/connectivity_service.dart';
 import 'services/error_handler.dart';
+import 'services/notification_service.dart';
+
+// Background message handler (must be top-level function)
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  print('🔥 Background Message: ${message.notification?.title}');
+  print('🔥 Background Message Body: ${message.notification?.body}');
+  print('🔥 Background Message Data: ${message.data}');
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize Firebase
+  await Firebase.initializeApp();
+  
+  // Initialize Firebase Messaging background handler
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
   
   // Initialize HTTP client for mobile
   HttpClient.configureClient();
@@ -57,6 +76,14 @@ void main() async {
     print('Startup Connectivity Status: ${connectivityStatus.message}');
   } catch (e) {
     print('Connectivity check failed: $e');
+  }
+  
+  // Initialize Firebase Cloud Messaging
+  try {
+    await NotificationService.initialize();
+    print('🔥 Firebase Messaging initialized successfully');
+  } catch (e) {
+    print('🔥 Firebase Messaging initialization failed: $e');
   }
   
   runApp(const ShoppursShopApp());
@@ -113,6 +140,8 @@ class ShoppursShopApp extends StatelessWidget {
         '/manage-users': (context) => const ManageUsersPage(),
         '/category-management': (context) => const CategoryManagementPage(),
         '/user-management': (context) => const UserManagementPage(),
+        '/customer-leads': (context) => const CustomerLeadsPage(),
+        '/low-stock-products': (context) => const LowStockProductsPage(),
         '/retailer-list': (context) => const RetailerListPage(),
       },
     );
@@ -141,6 +170,7 @@ class _ErrorHandlingNavigatorObserver extends NavigatorObserver {
       if (context != null) {
         HttpClient.setContext(context);
         ErrorHandler.setContext(context);
+        NotificationService.setContext(context);
       }
     });
   }

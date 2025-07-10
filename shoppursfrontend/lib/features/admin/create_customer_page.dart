@@ -3,11 +3,21 @@ import 'package:flutter/services.dart';
 import '../../services/customer_service.dart';
 import '../../services/auth_service.dart';
 import '../../models/customer_model.dart';
+import '../../models/customer_lead_model.dart';
 import '../../widgets/error_message_widget.dart';
 import '../../widgets/location_picker_map.dart';
 
 class CreateCustomerPage extends StatefulWidget {
-  const CreateCustomerPage({Key? key}) : super(key: key);
+  final CustomerLead? leadData;
+  final bool isEdit;
+  final Map<String, dynamic>? customerData;
+  
+  const CreateCustomerPage({
+    Key? key,
+    this.leadData,
+    this.isEdit = false,
+    this.customerData,
+  }) : super(key: key);
 
   @override
   State<CreateCustomerPage> createState() => _CreateCustomerPageState();
@@ -49,6 +59,28 @@ class _CreateCustomerPageState extends State<CreateCustomerPage> {
     _addresses.add(AddressForm());
     // Set default password
     _passwordController.text = '123456';
+    
+    // Pre-fill form if lead data is provided
+    if (widget.leadData != null) {
+      _prefillFromLead(widget.leadData!);
+    }
+  }
+  
+  void _prefillFromLead(CustomerLead lead) {
+    _usernameController.text = lead.custldName;
+    if (lead.custldEmailId != null && lead.custldEmailId!.isNotEmpty) {
+      _emailController.text = lead.custldEmailId!;
+    }
+    _mobileController.text = lead.custldMobileNo.toString();
+    _storeNameController.text = lead.custldShopName;
+    if (lead.custldCity != null && lead.custldCity!.isNotEmpty) {
+      _cityController.text = lead.custldCity!;
+    }
+    if (lead.custldState != null && lead.custldState!.isNotEmpty) {
+      _provinceController.text = lead.custldState!;
+    }
+    _zipController.text = lead.custldPinCode.toString();
+    _addressController.text = lead.custldAddress;
   }
 
   @override
@@ -278,29 +310,7 @@ class _CreateCustomerPageState extends State<CreateCustomerPage> {
             const SizedBox(height: 16),
 
             // Mobile
-            TextFormField(
-              controller: _mobileController,
-              decoration: const InputDecoration(
-                labelText: 'Mobile Number *',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.phone),
-                prefixText: '+91 ',
-              ),
-              keyboardType: TextInputType.phone,
-              inputFormatters: [
-                FilteringTextInputFormatter.digitsOnly,
-                LengthLimitingTextInputFormatter(10),
-              ],
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Please enter mobile number';
-                }
-                if (!_customerService.isValidMobile(value.trim())) {
-                  return 'Enter valid 10-digit mobile number starting with 6-9';
-                }
-                return null;
-              },
-            ),
+            _buildMobileField(),
             const SizedBox(height: 16),
 
             // Store Name
@@ -334,6 +344,33 @@ class _CreateCustomerPageState extends State<CreateCustomerPage> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildMobileField() {
+    return TextFormField(
+      controller: _mobileController,
+      keyboardType: TextInputType.phone,
+      enabled: !widget.isEdit && widget.leadData == null, // Disable if editing or converting from lead
+      decoration: InputDecoration(
+        labelText: 'Mobile Number',
+        hintText: 'Enter mobile number',
+        prefixIcon: const Icon(Icons.phone),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        filled: true,
+        fillColor: widget.isEdit || widget.leadData != null ? Colors.grey[100] : Colors.white,
+      ),
+      validator: (value) {
+        if (value == null || value.isEmpty) {
+          return 'Please enter mobile number';
+        }
+        if (!RegExp(r'^\d{10}$').hasMatch(value)) {
+          return 'Please enter a valid 10-digit mobile number';
+        }
+        return null;
+      },
     );
   }
 
@@ -755,9 +792,9 @@ class _CreateCustomerPageState extends State<CreateCustomerPage> {
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
       appBar: AppBar(
-        title: const Text(
-          'Create Customer',
-          style: TextStyle(
+        title: Text(
+          widget.leadData != null ? 'Convert Lead to Customer' : 'Create Customer',
+          style: const TextStyle(
             fontWeight: FontWeight.bold,
             color: Colors.white,
           ),

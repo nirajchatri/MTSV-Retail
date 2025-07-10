@@ -128,7 +128,7 @@ class _SelfRetailerDetailPageState extends State<SelfRetailerDetailPage> {
       if (token == null) throw Exception('No authentication token found');
 
       // Build URL with location parameters if available
-      String url = 'http://192.168.29.96:3000/api/retailers/my-retailer';
+      String url = 'https://api.shoppurs.in/api/retailers/my-retailer';
       Map<String, String> queryParams = {};
       
       if (currentLat != null && currentLong != null) {
@@ -390,9 +390,7 @@ class _SelfRetailerDetailPageState extends State<SelfRetailerDetailPage> {
             borderRadius: BorderRadius.circular(12),
             child: retailer['RET_PHOTO'] != null
                 ? Image.network(
-                    retailer['RET_PHOTO'].toString().startsWith('http')
-                        ? retailer['RET_PHOTO']
-                        : '${ApiConfig.baseUrl}/uploads/retailers/profiles/${retailer['RET_PHOTO']}',
+                    retailer['RET_PHOTO'],
                     width: double.infinity,
                     height: 200,
                     fit: BoxFit.cover,

@@ -2,6 +2,8 @@ const { pool: db } = require('../config/database');
 const bcrypt = require('bcryptjs');
 const path = require('path');
 const QRCode = require('qrcode');
+const { base_url } = require('../environment');
+const { sendNotification } = require('../utils/notificationService');
 
 // Create directory function
 function createDirectory(dirPath) {
@@ -290,8 +292,11 @@ const updateOrderStatus = async (req, res) => {
       });
     }
 
-    // Get uploaded image filename if present
-    const paymentImage = req.uploadedFile ? req.uploadedFile.filename : orders[0].CO_IMAGE;
+    // Get uploaded image path if present
+    let paymentImage = orders[0].CO_IMAGE;
+    if (req.uploadedFile) {
+      paymentImage = `${base_url}/uploads/orders/${req.uploadedFile.filename}`;
+    }
 
     // Build dynamic update query based on provided fields
     let updateFields = [
@@ -360,28 +365,135 @@ const updateOrderStatus = async (req, res) => {
       // Generate invoice number (e.g., INV + orderId)
       const invoiceNumber = `INV${orderId}`;
       
-      // Calculate tax totals from order items
+      // Calculate tax totals and item details for dynamic invoice sections
       let totalCGST = 0;
       let totalSGST = 0;
       let totalIGST = 0;
       let totalTaxableValue = 0;
+      let totalItemsCount = 0;
+      let totalDiscountedItems = 0;
+      let totalSavingsAmount = 0;
+      let subtotalBeforeTax = 0;
 
+      // Process each item for detailed calculations
       orderItems.forEach(item => {
         const itemTaxableValue = parseFloat(item.PROD_SP || 0) * parseInt(item.QUANTITY || 0);
+        const itemMRP = parseFloat(item.PROD_MRP || 0) * parseInt(item.QUANTITY || 0);
         const cgstRate = parseFloat(item.PROD_CGST || 0);
         const sgstRate = parseFloat(item.PROD_SGST || 0);
         const igstRate = parseFloat(item.PROD_IGST || 0);
         
         totalTaxableValue += itemTaxableValue;
+        subtotalBeforeTax += itemTaxableValue;
         totalCGST += (itemTaxableValue * cgstRate) / 100;
         totalSGST += (itemTaxableValue * sgstRate) / 100;
         totalIGST += (itemTaxableValue * igstRate) / 100;
+        
+        // Count items
+        totalItemsCount += parseInt(item.QUANTITY || 0);
+        
+        // Calculate savings (MRP vs SP)
+        if (itemMRP > itemTaxableValue) {
+          totalDiscountedItems += parseInt(item.QUANTITY || 0);
+          totalSavingsAmount += (itemMRP - itemTaxableValue);
+        }
       });
 
       const totalTaxAmount = totalCGST + totalSGST + totalIGST;
       
-      // Generate PDF and QR code
-      const invoicePath = await require('../utils/invoiceGenerator').generateInvoicePDF({ order, orderItems, invoiceNumber });
+      // Prepare Purchase Summary data
+      const purchaseSummary = {
+        totalAmount: parseFloat(order.ORDER_TOTAL),
+        itemsCount: totalItemsCount,
+        discountedItemsCount: totalDiscountedItems,
+        totalSavings: totalSavingsAmount.toFixed(2)
+      };
+      
+      // Prepare Payment Details data
+      const paymentDetails = {
+        paymentMethod: order.PAYMENT_METHOD === 'cod' ? 'Cash' : order.PAYMENT_METHOD.toUpperCase(),
+        paymentBrand: order.PAYMENT_METHOD === 'cod' ? 'Cash' : 'Card',
+        amount: parseFloat(order.ORDER_TOTAL).toFixed(2)
+      };
+      
+      // Prepare GST breakdown data grouped by tax rates
+      const gstBreakdown = [];
+      const taxRateGroups = {};
+      
+      // Group items by their tax rates
+      orderItems.forEach(item => {
+        const cgstRate = parseFloat(item.PROD_CGST || 0);
+        const sgstRate = parseFloat(item.PROD_SGST || 0);
+        const igstRate = parseFloat(item.PROD_IGST || 0);
+        const itemTaxableValue = parseFloat(item.PROD_SP || 0) * parseInt(item.QUANTITY || 0);
+        
+        // Create a key for grouping (e.g., "6-6-0" for 6% CGST, 6% SGST, 0% IGST)
+        const rateKey = `${cgstRate}-${sgstRate}-${igstRate}`;
+        
+        if (!taxRateGroups[rateKey]) {
+          taxRateGroups[rateKey] = {
+            cgstRate: cgstRate,
+            sgstRate: sgstRate,
+            igstRate: igstRate,
+            taxableValue: 0,
+            cgstAmount: 0,
+            sgstAmount: 0,
+            igstAmount: 0
+          };
+        }
+        
+        // Add to the group
+        taxRateGroups[rateKey].taxableValue += itemTaxableValue;
+        taxRateGroups[rateKey].cgstAmount += (itemTaxableValue * cgstRate) / 100;
+        taxRateGroups[rateKey].sgstAmount += (itemTaxableValue * sgstRate) / 100;
+        taxRateGroups[rateKey].igstAmount += (itemTaxableValue * igstRate) / 100;
+      });
+      
+      // Convert grouped data to breakdown array
+      Object.values(taxRateGroups).forEach(group => {
+        // Add CGST row if rate > 0
+        if (group.cgstRate > 0) {
+          gstBreakdown.push({
+            gstType: 'CGST',
+            taxableValue: group.taxableValue.toFixed(2),
+            taxRate: group.cgstRate,
+            taxAmount: group.cgstAmount.toFixed(2)
+          });
+        }
+        
+        // Add SGST row if rate > 0
+        if (group.sgstRate > 0) {
+          gstBreakdown.push({
+            gstType: 'SGST',
+            taxableValue: group.taxableValue.toFixed(2),
+            taxRate: group.sgstRate,
+            taxAmount: group.sgstAmount.toFixed(2)
+          });
+        }
+        
+        // Add IGST row if rate > 0
+        if (group.igstRate > 0) {
+          gstBreakdown.push({
+            gstType: 'IGST',
+            taxableValue: group.taxableValue.toFixed(2),
+            taxRate: group.igstRate,
+            taxAmount: group.igstAmount.toFixed(2)
+          });
+        }
+      });
+      
+      const totalTax = totalTaxAmount.toFixed(2);
+      
+      // Generate PDF with enhanced data
+      const invoicePath = await require('../utils/invoiceGenerator').generateInvoicePDF({ 
+        order, 
+        orderItems, 
+        invoiceNumber,
+        purchaseSummary,
+        paymentDetails,
+        gstBreakdown,
+        totalTax
+      });
       // Insert into invoice_master
       const [invoiceResult] = await db.promise().query(
         `INSERT INTO invoice_master (
@@ -427,7 +539,7 @@ const updateOrderStatus = async (req, res) => {
       // Update the cust_order table with the invoice URL
       await db.promise().query(
         'UPDATE cust_order SET INVOICE_URL = ? WHERE CO_ID = ?',
-        [`/uploads/invoice/${invoiceNumber}.pdf`, orderId]
+        [`${base_url}/uploads/invoice/${invoiceNumber}.pdf`, orderId]
       );
 
       // Update payment status in cust_payment table
@@ -445,7 +557,7 @@ const updateOrderStatus = async (req, res) => {
         oldStatus: currentStatus,
         newStatus: status.toLowerCase(),
         deliveredBy: employeeUserId,
-        paymentImage: paymentImage ? `/uploads/orders/${paymentImage}` : null,
+        paymentImage: paymentImage ? `${base_url}/uploads/orders/${paymentImage}` : null,
         deliveryCoordinates: {
           latitude: lat || null,
           longitude: long || null
@@ -505,6 +617,7 @@ const placeOrderForCustomer = async (req, res) => {
       SELECT c.*, p.PROD_NAME, p.PROD_MRP, p.PROD_SP, p.PROD_CODE,
              p.PROD_DESC, p.PROD_CGST, p.PROD_IGST, p.PROD_SGST,
              p.PROD_IMAGE_1, p.PROD_IMAGE_2, p.PROD_IMAGE_3, p.IS_BARCODE_AVAILABLE,
+             p.PROD_QOH,
              pu.PU_PROD_UNIT, pu.PU_PROD_UNIT_VALUE, pu.PU_PROD_RATE
       FROM cart c
       JOIN product_master p ON c.PROD_ID = p.PROD_ID
@@ -517,6 +630,32 @@ const placeOrderForCustomer = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Employee cart is empty. Please add items to cart first.'
+      });
+    }
+
+    // Check stock availability for all cart items
+    const stockErrors = [];
+    for (const item of cartItems) {
+      const availableStock = item.PROD_QOH || 0;
+      const requestedQuantity = item.QUANTITY;
+      
+      if (requestedQuantity > availableStock) {
+        stockErrors.push({
+          productName: item.PROD_NAME,
+          productCode: item.PROD_CODE,
+          requested: requestedQuantity,
+          available: availableStock
+        });
+      }
+    }
+
+    // If any products don't have enough stock, return error
+    if (stockErrors.length > 0) {
+      await connection.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'Insufficient stock for some products',
+        stockErrors: stockErrors
       });
     }
 
@@ -587,8 +726,9 @@ const placeOrderForCustomer = async (req, res) => {
 
     const orderId = orderResult.insertId;
 
-    // Create order items in cust_order_details table
+    // Create order items in cust_order_details table AND reduce stock
     for (const item of cartItems) {
+      // Insert order item
       await connection.query(`
         INSERT INTO cust_order_details (
           COD_CO_ID, COD_QTY, PROD_NAME, PROD_BARCODE, PROD_DESC, 
@@ -604,6 +744,13 @@ const placeOrderForCustomer = async (req, res) => {
         item.PROD_CODE || '', item.PROD_ID, item.PU_PROD_UNIT,
         item.IS_BARCODE_AVAILABLE || 0 // Use actual IS_BARCODE_AVAILABLE from product
       ]);
+
+      // Reduce stock quantity in product_master table
+      await connection.query(`
+        UPDATE product_master 
+        SET PROD_QOH = PROD_QOH - ?
+        WHERE PROD_ID = ?
+      `, [item.QUANTITY, item.PROD_ID]);
     }
 
     // Get today's DWR_ID for the employee to link with cdwr_detail
@@ -674,28 +821,135 @@ const placeOrderForCustomer = async (req, res) => {
     // Generate invoice number
     const invoiceNumber = `INV${orderId}`;
     
-    // Calculate tax totals from order items
+    // Calculate tax totals and item details for dynamic invoice sections
     let totalCGST = 0;
     let totalSGST = 0;
     let totalIGST = 0;
     let totalTaxableValue = 0;
+    let totalItemsCount = 0;
+    let totalDiscountedItems = 0;
+    let totalSavingsAmount = 0;
+    let subtotalBeforeTax = 0;
 
+    // Process each item for detailed calculations
     orderItems.forEach(item => {
       const itemTaxableValue = parseFloat(item.PROD_SP || 0) * parseInt(item.QUANTITY || 0);
+      const itemMRP = parseFloat(item.PROD_MRP || 0) * parseInt(item.QUANTITY || 0);
       const cgstRate = parseFloat(item.PROD_CGST || 0);
       const sgstRate = parseFloat(item.PROD_SGST || 0);
       const igstRate = parseFloat(item.PROD_IGST || 0);
       
       totalTaxableValue += itemTaxableValue;
+      subtotalBeforeTax += itemTaxableValue;
       totalCGST += (itemTaxableValue * cgstRate) / 100;
       totalSGST += (itemTaxableValue * sgstRate) / 100;
       totalIGST += (itemTaxableValue * igstRate) / 100;
+      
+      // Count items
+      totalItemsCount += parseInt(item.QUANTITY || 0);
+      
+      // Calculate savings (MRP vs SP)
+      if (itemMRP > itemTaxableValue) {
+        totalDiscountedItems += parseInt(item.QUANTITY || 0);
+        totalSavingsAmount += (itemMRP - itemTaxableValue);
+      }
     });
 
     const totalTaxAmount = totalCGST + totalSGST + totalIGST;
     
-    // Generate PDF and QR code
-    const invoicePath = await require('../utils/invoiceGenerator').generateInvoicePDF({ order, orderItems, invoiceNumber });
+    // Prepare Purchase Summary data
+    const purchaseSummary = {
+      totalAmount: parseFloat(order.ORDER_TOTAL),
+      itemsCount: totalItemsCount,
+      discountedItemsCount: totalDiscountedItems,
+      totalSavings: totalSavingsAmount.toFixed(2)
+    };
+    
+    // Prepare Payment Details data
+    const paymentDetails = {
+      paymentMethod: order.PAYMENT_METHOD === 'cod' ? 'Cash' : order.PAYMENT_METHOD.toUpperCase(),
+      paymentBrand: order.PAYMENT_METHOD === 'cod' ? 'Cash' : 'Card',
+      amount: parseFloat(order.ORDER_TOTAL).toFixed(2)
+    };
+    
+    // Prepare GST breakdown data grouped by tax rates
+    const gstBreakdown = [];
+    const taxRateGroups = {};
+    
+    // Group items by their tax rates
+    orderItems.forEach(item => {
+      const cgstRate = parseFloat(item.PROD_CGST || 0);
+      const sgstRate = parseFloat(item.PROD_SGST || 0);
+      const igstRate = parseFloat(item.PROD_IGST || 0);
+      const itemTaxableValue = parseFloat(item.PROD_SP || 0) * parseInt(item.QUANTITY || 0);
+      
+      // Create a key for grouping (e.g., "6-6-0" for 6% CGST, 6% SGST, 0% IGST)
+      const rateKey = `${cgstRate}-${sgstRate}-${igstRate}`;
+      
+      if (!taxRateGroups[rateKey]) {
+        taxRateGroups[rateKey] = {
+          cgstRate: cgstRate,
+          sgstRate: sgstRate,
+          igstRate: igstRate,
+          taxableValue: 0,
+          cgstAmount: 0,
+          sgstAmount: 0,
+          igstAmount: 0
+        };
+      }
+      
+      // Add to the group
+      taxRateGroups[rateKey].taxableValue += itemTaxableValue;
+      taxRateGroups[rateKey].cgstAmount += (itemTaxableValue * cgstRate) / 100;
+      taxRateGroups[rateKey].sgstAmount += (itemTaxableValue * sgstRate) / 100;
+      taxRateGroups[rateKey].igstAmount += (itemTaxableValue * igstRate) / 100;
+    });
+    
+    // Convert grouped data to breakdown array
+    Object.values(taxRateGroups).forEach(group => {
+      // Add CGST row if rate > 0
+      if (group.cgstRate > 0) {
+        gstBreakdown.push({
+          gstType: 'CGST',
+          taxableValue: group.taxableValue.toFixed(2),
+          taxRate: group.cgstRate,
+          taxAmount: group.cgstAmount.toFixed(2)
+        });
+      }
+      
+      // Add SGST row if rate > 0
+      if (group.sgstRate > 0) {
+        gstBreakdown.push({
+          gstType: 'SGST',
+          taxableValue: group.taxableValue.toFixed(2),
+          taxRate: group.sgstRate,
+          taxAmount: group.sgstAmount.toFixed(2)
+        });
+      }
+      
+      // Add IGST row if rate > 0
+      if (group.igstRate > 0) {
+        gstBreakdown.push({
+          gstType: 'IGST',
+          taxableValue: group.taxableValue.toFixed(2),
+          taxRate: group.igstRate,
+          taxAmount: group.igstAmount.toFixed(2)
+        });
+      }
+    });
+    
+    const totalTax = totalTaxAmount.toFixed(2);
+    
+    // Generate PDF with enhanced data
+    const invoicePath = await require('../utils/invoiceGenerator').generateInvoicePDF({ 
+      order, 
+      orderItems, 
+      invoiceNumber,
+      purchaseSummary,
+      paymentDetails,
+      gstBreakdown,
+      totalTax
+    });
     // Insert into invoice_master
     const [invoiceResult] = await connection.query(
       `INSERT INTO invoice_master (
@@ -783,7 +1037,7 @@ const placeOrderForCustomer = async (req, res) => {
     // Update the cust_order table with the invoice URL
     await connection.query(
       'UPDATE cust_order SET INVOICE_URL = ? WHERE CO_ID = ?',
-      [`/uploads/invoice/${invoiceNumber}.pdf`, orderId]
+      [`${base_url}/uploads/invoice/${invoiceNumber}.pdf`, orderId]
     );
 
     // Commit transaction
@@ -797,7 +1051,7 @@ const placeOrderForCustomer = async (req, res) => {
         orderNumber,
         orderTotal,
         invoiceNumber,
-        invoicePath: `/uploads/invoice/${invoiceNumber}.pdf`
+        invoicePath: `${base_url}/uploads/invoice/${invoiceNumber}.pdf`
       }
     });
 
@@ -925,6 +1179,7 @@ const searchRetailers = async (req, res) => {
 // Edit retailer by employee (with photo upload support)
 const editRetailer = async (req, res) => {
   try {
+    console.log("this")
     const { retailerId } = req.params;
     const {
       RET_CODE,
@@ -1022,7 +1277,7 @@ const editRetailer = async (req, res) => {
     // Handle profile image upload
     if (req.uploadedFile) {
       updateFields.push('RET_PHOTO = ?');
-      updateValues.push(req.uploadedFile.filename);
+      updateValues.push(`${base_url}/uploads/retailers/profiles/${req.uploadedFile.filename}`);
     }
     
     if (RET_COUNTRY !== undefined) {
@@ -1104,7 +1359,7 @@ const editRetailer = async (req, res) => {
     // Add photo URL if photo exists
     const retailerData = updatedRetailer[0];
     if (retailerData.RET_PHOTO) {
-      retailerData.RET_PHOTO_URL = `http://localhost:3000/uploads/retailers/profiles/${retailerData.RET_PHOTO}`;
+      retailerData.RET_PHOTO_URL = `${base_url}/uploads/retailers/profiles/${retailerData.RET_PHOTO}`;
     }
 
     res.json({
@@ -1113,7 +1368,7 @@ const editRetailer = async (req, res) => {
       data: retailerData,
       uploadedFile: req.uploadedFile ? {
         filename: req.uploadedFile.filename,
-        url: `http://localhost:3000/uploads/retailers/profiles/${req.uploadedFile.filename}`
+        url: `${base_url}/uploads/retailers/profiles/${req.uploadedFile.filename}`
       } : null,
       updated_by: req.user.USERNAME,
       updated_fields: updateFields.length - 2 // Exclude UPDATED_DATE and UPDATED_BY from count
@@ -1179,7 +1434,7 @@ const getRetailerByPhone = async (req, res) => {
     // Add photo URL if photo exists
     const retailerData = retailer[0];
     if (retailerData.RET_PHOTO) {
-      retailerData.RET_PHOTO_URL = `http://localhost:3000/uploads/retailers/profiles/${retailerData.RET_PHOTO}`;
+      retailerData.RET_PHOTO_URL = `${base_url}/uploads/retailers/profiles/${retailerData.RET_PHOTO}`;
     }
 
     res.json({
@@ -1431,6 +1686,53 @@ const startDay = async (req, res) => {
       SELECT * FROM dwr_detail WHERE DWR_ID = ?
     `, [dwrId]);
 
+    // Send notification to admins about employee checkin
+    try {
+      // Get admin FCM tokens and employee name from database
+      const [users] = await db.promise().query(
+        'SELECT FCM_TOKEN FROM user_info WHERE ISACTIVE = "Y" AND FCM_TOKEN IS NOT NULL AND USER_TYPE = "admin"'
+      );
+      
+      const [employeeData] = await db.promise().query(
+        'SELECT USERNAME FROM user_info WHERE USER_ID = ?',
+        [req.user.USER_ID]
+      );
+      
+      const fcmTokens = users.map(user => user.FCM_TOKEN);
+      
+      if (fcmTokens.length > 0) {
+        // Get employee name from database
+        const employeeName = employeeData.length > 0 ? employeeData[0].USERNAME : 'Employee';
+        const currentTime = new Date().toLocaleString('en-IN', {
+          timeZone: 'Asia/Kolkata',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true
+        });
+        
+        const resultNotification = await sendNotification(
+          fcmTokens,                     
+          'Employee Checkin Alert',        
+          `Employee ${employeeName} checked in at ${currentTime}`,
+          {
+            type: 'employee_checkin',
+            employee_id: employeeId.toString(),
+            employee_name: employeeName,
+            dwr_id: dwrId.toString(),
+            timestamp: currentTimestamp.toISOString()
+          }
+        );
+        
+        console.log('Checkin notification sent:', resultNotification);
+      }
+    } catch (notificationError) {
+      console.error('Error sending checkin notification:', notificationError);
+      // Don't fail the API if notification fails
+    }
+
     res.json({
       success: true,
       message: 'Day started successfully!',
@@ -1525,6 +1827,54 @@ const endDay = async (req, res) => {
     const [updatedDwr] = await db.promise().query(`
       SELECT * FROM dwr_detail WHERE DWR_ID = ?
     `, [dwr.DWR_ID]);
+
+    // Send notification to admins about employee checkout
+    try {
+      // Get admin FCM tokens and employee name from database
+      const [users] = await db.promise().query(
+        'SELECT FCM_TOKEN FROM user_info WHERE ISACTIVE = "Y" AND FCM_TOKEN IS NOT NULL AND USER_TYPE = "admin"'
+      );
+      
+      const [employeeData] = await db.promise().query(
+        'SELECT USERNAME FROM user_info WHERE USER_ID = ?',
+        [req.user.USER_ID]
+      );
+      
+      const fcmTokens = users.map(user => user.FCM_TOKEN);
+      
+      if (fcmTokens.length > 0) {
+        // Get employee name from database
+        const employeeName = employeeData.length > 0 ? employeeData[0].USERNAME : 'Employee';
+        const currentTime = new Date().toLocaleString('en-IN', {
+          timeZone: 'Asia/Kolkata',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true
+        });
+        
+        const resultNotification = await sendNotification(
+          fcmTokens,                     
+          'Employee Checkout Alert',        
+          `Employee ${employeeName} checked out at ${currentTime}`,
+          {
+            type: 'employee_checkout',
+            employee_id: employeeId.toString(),
+            employee_name: employeeName,
+            dwr_id: dwr.DWR_ID.toString(),
+            total_expenses: (DWR_EXPENSES || 0).toString(),
+            timestamp: currentTimestamp.toISOString()
+          }
+        );
+        
+        console.log('Checkout notification sent:', resultNotification);
+      }
+    } catch (notificationError) {
+      console.error('Error sending checkout notification:', notificationError);
+      // Don't fail the API if notification fails
+    }
 
     res.json({
       success: true,
@@ -1668,10 +2018,12 @@ const createCustomerByEmployee = async (req, res) => {
     createDirectory(path.join(__dirname, '../../uploads/retailers/qrcode'));
 
     let qrFileName = null;
+    let qrFullPath = null;
     try {
       // Generate QR code for the phone number
       qrFileName = `qr_${mobile}_${Date.now()}.png`;
       const qrPath = path.join(__dirname, '../../uploads/retailers/qrcode', qrFileName);
+      qrFullPath = `${base_url}/uploads/retailers/qrcode/${qrFileName}`;
       
       // Convert phone to string and add country code
       const phoneWithCode = `+91${mobile.toString()}`;
@@ -1691,7 +2043,7 @@ const createCustomerByEmployee = async (req, res) => {
       // Continue without QR code if generation fails
     }
 
-    // Insert retailer profile
+    // Insert retailer profile with full QR code URL
     await connection.query(
       `INSERT INTO retailer_info (
         RET_CODE, RET_TYPE, RET_NAME, RET_MOBILE_NO, RET_ADDRESS, RET_PIN_CODE, 
@@ -1716,7 +2068,7 @@ const createCustomerByEmployee = async (req, res) => {
         long || null,
         req.user.USERNAME,
         req.user.USERNAME,
-        qrFileName
+        qrFullPath
       ]
     );
 
@@ -1736,6 +2088,29 @@ const createCustomerByEmployee = async (req, res) => {
       'SELECT * FROM customer_address WHERE USER_ID = ? AND DEL_STATUS = "N"',
       [userId]
     );
+
+
+    
+    
+    const [users] = await db.promise().query(
+      'SELECT FCM_TOKEN FROM user_info WHERE ISACTIVE = "Y" AND FCM_TOKEN IS NOT NULL AND USER_TYPE = "admin"'
+    );
+    
+    const fcmTokens = users.map(user => user.FCM_TOKEN);
+    
+    const result = await sendNotification(
+      fcmTokens,                     // Single token or array
+      'New Retailer Created',        // Title
+      `A new retailer has been successfully created`, // Message
+      // Optional data
+    );
+
+
+
+
+
+
+
 
     res.status(201).json({
       success: true,
@@ -1895,11 +2270,17 @@ const createCustomerWithMultipleAddressesByEmployee = async (req, res) => {
     createDirectory(path.join(__dirname, '../../uploads/retailers/qrcode'));
 
     let qrFileName = null;
+    let qrFullPath = null;
     try {
+      // Generate QR code for the phone number
       qrFileName = `qr_${mobile}_${Date.now()}.png`;
       const qrPath = path.join(__dirname, '../../uploads/retailers/qrcode', qrFileName);
+      qrFullPath = `${base_url}/uploads/retailers/qrcode/${qrFileName}`;
+      
+      // Convert phone to string and add country code
       const phoneWithCode = `+91${mobile.toString()}`;
       
+      // Generate QR code
       await QRCode.toFile(qrPath, phoneWithCode, {
         errorCorrectionLevel: 'H',
         width: 500,
@@ -1911,9 +2292,10 @@ const createCustomerWithMultipleAddressesByEmployee = async (req, res) => {
       });
     } catch (qrError) {
       console.error('QR Code generation error:', qrError);
+      // Continue without QR code if generation fails
     }
 
-    // Insert retailer profile
+    // Insert retailer profile with full QR code URL
     await connection.query(
       `INSERT INTO retailer_info (
         RET_CODE, RET_TYPE, RET_NAME, RET_MOBILE_NO, RET_ADDRESS, RET_PIN_CODE, 
@@ -1938,7 +2320,7 @@ const createCustomerWithMultipleAddressesByEmployee = async (req, res) => {
         long || null,
         req.user.USERNAME,
         req.user.USERNAME,
-        qrFileName
+        qrFullPath
       ]
     );
 
@@ -1958,6 +2340,26 @@ const createCustomerWithMultipleAddressesByEmployee = async (req, res) => {
       'SELECT * FROM customer_address WHERE USER_ID = ? AND DEL_STATUS = "N"',
       [userId]
     );
+
+
+
+
+    
+    const [users] = await db.promise().query(
+      'SELECT FCM_TOKEN FROM user_info WHERE ISACTIVE = "Y" AND FCM_TOKEN IS NOT NULL AND USER_TYPE = "admin"'
+    );
+    
+    const fcmTokens = users.map(user => user.FCM_TOKEN);
+    
+    const result = await sendNotification(
+      fcmTokens,                     // Single token or array
+      'New Retailer Created',        // Title
+      `A new retailer has been successfully created`, // Message
+      // Optional data
+    );
+
+
+
 
     res.status(201).json({
       success: true,
@@ -2139,6 +2541,579 @@ const searchCustomersByEmployee = async (req, res) => {
   }
 };
 
+// Customer Leads Management APIs (Employee Access)
+const getCustomerLeadsByEmployee = async (req, res) => {
+  try {
+    const { 
+      page = 1, 
+      limit = 10, 
+      type, 
+      status, 
+      city, 
+      state, 
+      search 
+    } = req.query;
+    
+    const offset = (page - 1) * limit;
+
+    // Build WHERE clause dynamically
+    let whereConditions = [];
+    let queryParams = [];
+
+    // Filter by type
+    if (type) {
+      whereConditions.push('CUSTLD_TYPE = ?');
+      queryParams.push(type);
+    }
+
+    // Filter by status
+    if (status) {
+      whereConditions.push('CUSTLD_DEL_STATUS = ?');
+      queryParams.push(status);
+    } else {
+      // Default to active leads only
+      whereConditions.push('CUSTLD_DEL_STATUS = ?');
+      queryParams.push('active');
+    }
+
+    // Filter by city
+    if (city) {
+      whereConditions.push('CUSTLD_CITY = ?');
+      queryParams.push(city);
+    }
+
+    // Filter by state
+    if (state) {
+      whereConditions.push('CUSTLD_STATE = ?');
+      queryParams.push(state);
+    }
+
+    // Search functionality
+    if (search) {
+      whereConditions.push(`(
+        CUSTLD_NAME LIKE ? OR 
+        CUSTLD_SHOP_NAME LIKE ? OR 
+        CUSTLD_MOBILE_NO LIKE ? OR 
+        CUSTLD_EMAIL_ID LIKE ? OR 
+        CUSTLD_ADDRESS LIKE ?
+      )`);
+      const searchPattern = `%${search}%`;
+      queryParams.push(searchPattern, searchPattern, searchPattern, searchPattern, searchPattern);
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+    // Get customer leads with pagination
+    const [leads] = await db.promise().query(
+      `SELECT 
+        CUSTLD_ID,
+        CUSTLD_TYPE,
+        CUSTLD_NAME,
+        CUSTLD_SHOP_NAME,
+        CUSTLD_MOBILE_NO,
+        CUSTLD_ADDRESS,
+        CUSTLD_PIN_CODE,
+        CUSTLD_EMAIL_ID,
+        CUSTLD_COUNTRY,
+        CUSTLD_STATE,
+        CUSTLD_CITY,
+        CUSTLD_GST_NO,
+        CUSTLD_DEL_STATUS,
+        CREATED_DATE,
+        UPDATED_DATE,
+        CREATED_BY,
+        UPDATED_BY
+       FROM cust_lead ${whereClause}
+       ORDER BY CREATED_DATE DESC
+       LIMIT ? OFFSET ?`,
+      [...queryParams, parseInt(limit), offset]
+    );
+
+    // Get total count for pagination
+    const [countResult] = await db.promise().query(
+      `SELECT COUNT(*) as total FROM cust_lead ${whereClause}`,
+      queryParams
+    );
+
+    const totalLeads = countResult[0].total;
+    const totalPages = Math.ceil(totalLeads / limit);
+
+    res.json({
+      success: true,
+      message: 'Customer leads fetched successfully by employee',
+      data: {
+        leads,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: totalPages,
+          totalLeads: totalLeads,
+          limit: parseInt(limit),
+          hasNext: page < totalPages,
+          hasPrev: page > 1
+        },
+        filters: {
+          type: type || null,
+          status: status || 'active',
+          city: city || null,
+          state: state || null,
+          search: search || null
+        }
+      },
+      accessedBy: req.user.USERNAME,
+      accessedByRole: 'employee'
+    });
+
+  } catch (error) {
+    console.error('Employee get customer leads error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching customer leads',
+      error: error.message
+    });
+  }
+};
+
+const searchCustomerLeadsByEmployee = async (req, res) => {
+  try {
+    const { query, page = 1, limit = 10 } = req.query;
+    const offset = (page - 1) * limit;
+
+    if (!query) {
+      return res.status(400).json({
+        success: false,
+        message: 'Search query is required'
+      });
+    }
+
+    // Search customer leads by multiple fields
+    const [leads] = await db.promise().query(
+      `SELECT 
+        CUSTLD_ID,
+        CUSTLD_TYPE,
+        CUSTLD_NAME,
+        CUSTLD_SHOP_NAME,
+        CUSTLD_MOBILE_NO,
+        CUSTLD_ADDRESS,
+        CUSTLD_PIN_CODE,
+        CUSTLD_EMAIL_ID,
+        CUSTLD_COUNTRY,
+        CUSTLD_STATE,
+        CUSTLD_CITY,
+        CUSTLD_GST_NO,
+        CUSTLD_DEL_STATUS,
+        CREATED_DATE,
+        UPDATED_DATE,
+        CREATED_BY,
+        UPDATED_BY
+       FROM cust_lead 
+       WHERE CUSTLD_DEL_STATUS = 'active'
+       AND (
+         CUSTLD_NAME LIKE ? OR 
+         CUSTLD_SHOP_NAME LIKE ? OR 
+         CUSTLD_MOBILE_NO LIKE ? OR 
+         CUSTLD_EMAIL_ID LIKE ? OR 
+         CUSTLD_ADDRESS LIKE ? OR
+         CUSTLD_CITY LIKE ? OR
+         CUSTLD_STATE LIKE ?
+       )
+       ORDER BY 
+         CASE 
+           WHEN CUSTLD_NAME = ? THEN 1
+           WHEN CUSTLD_MOBILE_NO = ? THEN 1
+           WHEN CUSTLD_NAME LIKE ? THEN 2
+           WHEN CUSTLD_MOBILE_NO LIKE ? THEN 2
+           ELSE 3
+         END,
+         CREATED_DATE DESC
+       LIMIT ? OFFSET ?`,
+      [
+        `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`,
+        query, query, `${query}%`, `${query}%`,
+        parseInt(limit), offset
+      ]
+    );
+
+    // Get total count for pagination
+    const [countResult] = await db.promise().query(
+      `SELECT COUNT(*) as total
+       FROM cust_lead 
+       WHERE CUSTLD_DEL_STATUS = 'active'
+       AND (
+         CUSTLD_NAME LIKE ? OR 
+         CUSTLD_SHOP_NAME LIKE ? OR 
+         CUSTLD_MOBILE_NO LIKE ? OR 
+         CUSTLD_EMAIL_ID LIKE ? OR 
+         CUSTLD_ADDRESS LIKE ? OR
+         CUSTLD_CITY LIKE ? OR
+         CUSTLD_STATE LIKE ?
+       )`,
+      [`%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`]
+    );
+
+    const totalLeads = countResult[0].total;
+    const totalPages = Math.ceil(totalLeads / limit);
+
+    res.json({
+      success: true,
+      message: 'Customer leads search completed by employee',
+      data: {
+        leads: leads,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: totalPages,
+          totalLeads: totalLeads,
+          limit: parseInt(limit),
+          hasNext: page < totalPages,
+          hasPrev: page > 1
+        },
+        searchQuery: query
+      },
+      searchedBy: req.user.USERNAME,
+      searchedByRole: 'employee'
+    });
+
+  } catch (error) {
+    console.error('Employee search customer leads error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error searching customer leads',
+      error: error.message
+    });
+  }
+};
+
+// Customer with Retailer Details Management APIs (Employee Access)
+const getCustomersWithRetailerDetailsByEmployee = async (req, res) => {
+  try {
+    const { 
+      page = 1, 
+      limit = 10, 
+      userType, 
+      isActive, 
+      city, 
+      state, 
+      country,
+      retStatus,
+      search 
+    } = req.query;
+    
+    const offset = (page - 1) * limit;
+
+    // Build WHERE clause dynamically
+    let whereConditions = [];
+    let queryParams = [];
+
+    // Filter by user type (default to customer)
+    if (userType) {
+      whereConditions.push('u.USER_TYPE = ?');
+      queryParams.push(userType);
+    } else {
+      whereConditions.push('u.USER_TYPE = ?');
+      queryParams.push('customer');
+    }
+
+    // Filter by active status (default to active users)
+    if (isActive) {
+      whereConditions.push('u.ISACTIVE = ?');
+      queryParams.push(isActive);
+    } else {
+      whereConditions.push('u.ISACTIVE = ?');
+      queryParams.push('Y');
+    }
+
+    // Filter by city
+    if (city) {
+      whereConditions.push('(u.CITY = ? OR r.RET_CITY = ?)');
+      queryParams.push(city, city);
+    }
+
+    // Filter by state
+    if (state) {
+      whereConditions.push('(u.PROVINCE = ? OR r.RET_STATE = ?)');
+      queryParams.push(state, state);
+    }
+
+    // Filter by country
+    if (country) {
+      whereConditions.push('r.RET_COUNTRY = ?');
+      queryParams.push(country);
+    }
+
+    // Filter by retailer status
+    if (retStatus) {
+      whereConditions.push('r.RET_DEL_STATUS = ?');
+      queryParams.push(retStatus);
+    }
+
+    // Search functionality
+    if (search) {
+      whereConditions.push(`(
+        u.USERNAME LIKE ? OR 
+        u.EMAIL LIKE ? OR 
+        u.MOBILE LIKE ? OR 
+        u.ADDRESS LIKE ? OR
+        u.CITY LIKE ? OR
+        r.RET_NAME LIKE ? OR
+        r.RET_SHOP_NAME LIKE ? OR
+        r.RET_ADDRESS LIKE ? OR
+        r.RET_CITY LIKE ? OR
+        r.RET_CODE LIKE ?
+      )`);
+      const searchPattern = `%${search}%`;
+      queryParams.push(searchPattern, searchPattern, searchPattern, searchPattern, searchPattern, 
+                      searchPattern, searchPattern, searchPattern, searchPattern, searchPattern);
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+    // Get customers with retailer details and pagination
+    const [customers] = await db.promise().query(
+      `SELECT 
+        u.USER_ID,
+        u.UL_ID,
+        u.USERNAME,
+        u.EMAIL,
+        u.MOBILE,
+        u.CITY as USER_CITY,
+        u.PROVINCE as USER_PROVINCE,
+        u.ZIP as USER_ZIP,
+        u.ADDRESS as USER_ADDRESS,
+        u.PHOTO as USER_PHOTO,
+        u.FCM_TOKEN,
+        u.CREATED_DATE as USER_CREATED_DATE,
+        u.CREATED_BY as USER_CREATED_BY,
+        u.UPDATED_DATE as USER_UPDATED_DATE,
+        u.UPDATED_BY as USER_UPDATED_BY,
+        u.USER_TYPE,
+        u.ISACTIVE as USER_ISACTIVE,
+        u.is_otp_verify,
+        r.RET_ID,
+        r.RET_CODE,
+        r.RET_TYPE,
+        r.RET_NAME,
+        r.RET_SHOP_NAME,
+        r.RET_MOBILE_NO,
+        r.RET_ADDRESS,
+        r.RET_PIN_CODE,
+        r.RET_EMAIL_ID,
+        r.RET_PHOTO,
+        r.RET_COUNTRY,
+        r.RET_STATE,
+        r.RET_CITY,
+        r.RET_GST_NO,
+        r.RET_LAT,
+        r.RET_LONG,
+        r.RET_DEL_STATUS,
+        r.CREATED_DATE as RET_CREATED_DATE,
+        r.UPDATED_DATE as RET_UPDATED_DATE,
+        r.CREATED_BY as RET_CREATED_BY,
+        r.UPDATED_BY as RET_UPDATED_BY,
+        r.SHOP_OPEN_STATUS,
+        r.BARCODE_URL
+       FROM user_info u 
+       LEFT JOIN retailer_info r ON u.MOBILE = r.RET_MOBILE_NO
+       ${whereClause}
+       ORDER BY u.CREATED_DATE DESC
+       LIMIT ? OFFSET ?`,
+      [...queryParams, parseInt(limit), offset]
+    );
+
+    // Get total count for pagination
+    const [countResult] = await db.promise().query(
+      `SELECT COUNT(*) as total 
+       FROM user_info u 
+       LEFT JOIN retailer_info r ON u.MOBILE = r.RET_MOBILE_NO
+       ${whereClause}`,
+      queryParams
+    );
+
+    const totalCustomers = countResult[0].total;
+    const totalPages = Math.ceil(totalCustomers / limit);
+
+    res.json({
+      success: true,
+      message: 'Customers with retailer details fetched successfully by employee',
+      data: {
+        customers,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: totalPages,
+          totalCustomers: totalCustomers,
+          limit: parseInt(limit),
+          hasNext: page < totalPages,
+          hasPrev: page > 1
+        },
+        filters: {
+          userType: userType || 'customer',
+          isActive: isActive || 'Y',
+          city: city || null,
+          state: state || null,
+          country: country || null,
+          retStatus: retStatus || null,
+          search: search || null
+        }
+      },
+      accessedBy: req.user.USERNAME,
+      accessedByRole: 'employee'
+    });
+
+  } catch (error) {
+    console.error('Employee get customers with retailer details error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching customers with retailer details',
+      error: error.message
+    });
+  }
+};
+
+const searchCustomersWithRetailerDetailsByEmployee = async (req, res) => {
+  try {
+    const { query, page = 1, limit = 10 } = req.query;
+    const offset = (page - 1) * limit;
+
+    if (!query) {
+      return res.status(400).json({
+        success: false,
+        message: 'Search query is required'
+      });
+    }
+
+    // Search customers with retailer details by multiple fields
+    const [customers] = await db.promise().query(
+      `SELECT 
+        u.USER_ID,
+        u.UL_ID,
+        u.USERNAME,
+        u.EMAIL,
+        u.MOBILE,
+        u.CITY as USER_CITY,
+        u.PROVINCE as USER_PROVINCE,
+        u.ZIP as USER_ZIP,
+        u.ADDRESS as USER_ADDRESS,
+        u.PHOTO as USER_PHOTO,
+        u.FCM_TOKEN,
+        u.CREATED_DATE as USER_CREATED_DATE,
+        u.CREATED_BY as USER_CREATED_BY,
+        u.UPDATED_DATE as USER_UPDATED_DATE,
+        u.UPDATED_BY as USER_UPDATED_BY,
+        u.USER_TYPE,
+        u.ISACTIVE as USER_ISACTIVE,
+        u.is_otp_verify,
+        r.RET_ID,
+        r.RET_CODE,
+        r.RET_TYPE,
+        r.RET_NAME,
+        r.RET_SHOP_NAME,
+        r.RET_MOBILE_NO,
+        r.RET_ADDRESS,
+        r.RET_PIN_CODE,
+        r.RET_EMAIL_ID,
+        r.RET_PHOTO,
+        r.RET_COUNTRY,
+        r.RET_STATE,
+        r.RET_CITY,
+        r.RET_GST_NO,
+        r.RET_LAT,
+        r.RET_LONG,
+        r.RET_DEL_STATUS,
+        r.CREATED_DATE as RET_CREATED_DATE,
+        r.UPDATED_DATE as RET_UPDATED_DATE,
+        r.CREATED_BY as RET_CREATED_BY,
+        r.UPDATED_BY as RET_UPDATED_BY,
+        r.SHOP_OPEN_STATUS,
+        r.BARCODE_URL
+       FROM user_info u 
+       LEFT JOIN retailer_info r ON u.MOBILE = r.RET_MOBILE_NO
+       WHERE u.USER_TYPE = 'customer' 
+       AND u.ISACTIVE = 'Y'
+       AND (
+         u.USERNAME LIKE ? OR 
+         u.EMAIL LIKE ? OR 
+         u.MOBILE LIKE ? OR 
+         u.ADDRESS LIKE ? OR
+         u.CITY LIKE ? OR
+         r.RET_NAME LIKE ? OR
+         r.RET_SHOP_NAME LIKE ? OR
+         r.RET_ADDRESS LIKE ? OR
+         r.RET_CITY LIKE ? OR
+         r.RET_CODE LIKE ?
+       )
+       ORDER BY 
+         CASE 
+           WHEN u.USERNAME = ? THEN 1
+           WHEN u.MOBILE = ? THEN 1
+           WHEN r.RET_NAME = ? THEN 1
+           WHEN u.USERNAME LIKE ? THEN 2
+           WHEN u.MOBILE LIKE ? THEN 2
+           WHEN r.RET_NAME LIKE ? THEN 2
+           ELSE 3
+         END,
+         u.CREATED_DATE DESC
+       LIMIT ? OFFSET ?`,
+      [
+        `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`, 
+        `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`,
+        query, query, query, `${query}%`, `${query}%`, `${query}%`,
+        parseInt(limit), offset
+      ]
+    );
+
+    // Get total count for pagination
+    const [countResult] = await db.promise().query(
+      `SELECT COUNT(*) as total
+       FROM user_info u 
+       LEFT JOIN retailer_info r ON u.MOBILE = r.RET_MOBILE_NO
+       WHERE u.USER_TYPE = 'customer' 
+       AND u.ISACTIVE = 'Y'
+       AND (
+         u.USERNAME LIKE ? OR 
+         u.EMAIL LIKE ? OR 
+         u.MOBILE LIKE ? OR 
+         u.ADDRESS LIKE ? OR
+         u.CITY LIKE ? OR
+         r.RET_NAME LIKE ? OR
+         r.RET_SHOP_NAME LIKE ? OR
+         r.RET_ADDRESS LIKE ? OR
+         r.RET_CITY LIKE ? OR
+         r.RET_CODE LIKE ?
+       )`,
+      [`%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`, 
+       `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`]
+    );
+
+    const totalCustomers = countResult[0].total;
+    const totalPages = Math.ceil(totalCustomers / limit);
+
+    res.json({
+      success: true,
+      message: 'Customers with retailer details search completed by employee',
+      data: {
+        customers: customers,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: totalPages,
+          totalCustomers: totalCustomers,
+          limit: parseInt(limit),
+          hasNext: page < totalPages,
+          hasPrev: page > 1
+        },
+        searchQuery: query
+      },
+      searchedBy: req.user.USERNAME,
+      searchedByRole: 'employee'
+    });
+
+  } catch (error) {
+    console.error('Employee search customers with retailer details error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error searching customers with retailer details',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   fetchOrders,
   searchOrders,
@@ -2156,5 +3131,9 @@ module.exports = {
   createCustomerByEmployee,
   createCustomerWithMultipleAddressesByEmployee,
   getCustomerDetailsByEmployee,
-  searchCustomersByEmployee
+  searchCustomersByEmployee,
+  getCustomerLeadsByEmployee,
+  searchCustomerLeadsByEmployee,
+  getCustomersWithRetailerDetailsByEmployee,
+  searchCustomersWithRetailerDetailsByEmployee
 }; 

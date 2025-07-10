@@ -2,6 +2,7 @@ const { pool: db } = require('../config/database');
 const bcrypt = require('bcryptjs');
 const path = require('path');
 const QRCode = require('qrcode');
+const { base_url } = require('../../environment');
 
 // Create directory function
 function createDirectory(dirPath) {
@@ -44,10 +45,10 @@ const addProduct = async (req, res) => {
     const parsedProductUnits = typeof productUnits === 'string' ? JSON.parse(productUnits) : productUnits;
     const parsedBarcodes = typeof barcodes === 'string' ? JSON.parse(barcodes) : barcodes;
 
-    // Get uploaded image filenames
-    const prodImage1 = req.uploadedFiles?.prodImage1 || null;
-    const prodImage2 = req.uploadedFiles?.prodImage2 || null;
-    const prodImage3 = req.uploadedFiles?.prodImage3 || null;
+    // Get uploaded image filenames and create full paths
+    const prodImage1 = req.uploadedFiles?.prodImage1 ? `${base_url}/uploads/products/${req.uploadedFiles.prodImage1}` : null;
+    const prodImage2 = req.uploadedFiles?.prodImage2 ? `${base_url}/uploads/products/${req.uploadedFiles.prodImage2}` : null;
+    const prodImage3 = req.uploadedFiles?.prodImage3 ? `${base_url}/uploads/products/${req.uploadedFiles.prodImage3}` : null;
 
     // Insert product first
     const [result] = await connection.query(
@@ -154,10 +155,7 @@ const addProduct = async (req, res) => {
       message: 'Product added successfully',
       data: {
         product: {
-          ...createdProduct[0],
-          PROD_IMAGE_1: createdProduct[0].PROD_IMAGE_1 ? `/uploads/products/${createdProduct[0].PROD_IMAGE_1}` : null,
-          PROD_IMAGE_2: createdProduct[0].PROD_IMAGE_2 ? `/uploads/products/${createdProduct[0].PROD_IMAGE_2}` : null,
-          PROD_IMAGE_3: createdProduct[0].PROD_IMAGE_3 ? `/uploads/products/${createdProduct[0].PROD_IMAGE_3}` : null
+          ...createdProduct[0]
         },
         units: productUnitsResult,
         barcodes: productBarcodes
@@ -225,10 +223,10 @@ const editProduct = async (req, res) => {
       });
     }
 
-    // Get uploaded image filenames
-    const prodImage1 = req.uploadedFiles?.prodImage1 || null;
-    const prodImage2 = req.uploadedFiles?.prodImage2 || null;
-    const prodImage3 = req.uploadedFiles?.prodImage3 || null;
+    // Get uploaded image filenames and create full paths
+    const prodImage1 = req.uploadedFiles?.prodImage1 ? `${base_url}/uploads/products/${req.uploadedFiles.prodImage1}` : null;
+    const prodImage2 = req.uploadedFiles?.prodImage2 ? `${base_url}/uploads/products/${req.uploadedFiles.prodImage2}` : null;
+    const prodImage3 = req.uploadedFiles?.prodImage3 ? `${base_url}/uploads/products/${req.uploadedFiles.prodImage3}` : null;
 
     // Prepare image update fields
     const currentProduct = existingProduct[0];
@@ -362,10 +360,7 @@ const editProduct = async (req, res) => {
       message: 'Product updated successfully',
       data: {
         product: {
-          ...updatedProduct[0],
-          PROD_IMAGE_1: updatedProduct[0].PROD_IMAGE_1 ? `/uploads/products/${updatedProduct[0].PROD_IMAGE_1}` : null,
-          PROD_IMAGE_2: updatedProduct[0].PROD_IMAGE_2 ? `/uploads/products/${updatedProduct[0].PROD_IMAGE_2}` : null,
-          PROD_IMAGE_3: updatedProduct[0].PROD_IMAGE_3 ? `/uploads/products/${updatedProduct[0].PROD_IMAGE_3}` : null
+          ...updatedProduct[0]
         },
         units: activeUnits,
         barcodes: activeBarcodes
@@ -960,6 +955,93 @@ const addRetailer = async (req, res) => {
   }
 };
 
+// Promote Employee to Admin Role
+const promoteEmployeeToAdmin = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    // Validate required parameter
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'User ID is required'
+      });
+    }
+
+    // Check if user exists and is currently an employee
+    const [existingUser] = await db.promise().query(
+      'SELECT USER_ID, USERNAME, EMAIL, MOBILE, USER_TYPE, UL_ID, ISACTIVE FROM user_info WHERE USER_ID = ? AND ISACTIVE = "Y"',
+      [userId]
+    );
+
+    if (existingUser.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found or inactive'
+      });
+    }
+
+    const user = existingUser[0];
+
+    // Check if user is currently an employee
+    if (user.USER_TYPE !== 'employee') {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot promote user. Current role is '${user.USER_TYPE}'. Only employees can be promoted to admin.`
+      });
+    }
+
+    // Update user role from employee to admin
+    const [updateResult] = await db.promise().query(
+      `UPDATE user_info 
+       SET USER_TYPE = 'admin', UL_ID = 3, UPDATED_BY = ?, UPDATED_DATE = NOW()
+       WHERE USER_ID = ?`,
+      [req.user.USERNAME, userId]
+    );
+
+    if (updateResult.affectedRows === 0) {
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to update user role'
+      });
+    }
+
+    // Get updated user details
+    const [updatedUser] = await db.promise().query(
+      `SELECT USER_ID, UL_ID, USERNAME, EMAIL, MOBILE, CITY, PROVINCE, ZIP, 
+              ADDRESS, PHOTO, FCM_TOKEN, CREATED_DATE, CREATED_BY, UPDATED_DATE, 
+              UPDATED_BY, USER_TYPE, ISACTIVE, is_otp_verify
+       FROM user_info WHERE USER_ID = ?`,
+      [userId]
+    );
+
+    res.json({
+      success: true,
+      message: `User '${user.USERNAME}' has been successfully promoted from employee to admin`,
+      data: {
+        user: updatedUser[0],
+        promotion_details: {
+          previous_role: 'employee',
+          new_role: 'admin',
+          previous_user_level: 2,
+          new_user_level: 3,
+          promoted_by: req.user.USERNAME,
+          promotion_date: new Date().toISOString()
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Promote employee to admin error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error promoting employee to admin',
+      error: error.message
+    });
+  }
+};
+
+
 const editRetailer = async (req, res) => {
   try {
     const { retailerId } = req.params;
@@ -1060,7 +1142,7 @@ const editRetailer = async (req, res) => {
     // Handle profile image upload
     if (req.uploadedFile) {
       updateFields.push('RET_PHOTO = ?');
-      updateValues.push(req.uploadedFile.filename);
+      updateValues.push(`${base_url}/uploads/retailers/profiles/${req.uploadedFile.filename}`);
     }
     
     if (RET_COUNTRY !== undefined) {
@@ -1139,7 +1221,7 @@ const editRetailer = async (req, res) => {
     // Add photo URL if photo exists
     const retailerData = updatedRetailer[0];
     if (retailerData.RET_PHOTO) {
-      retailerData.RET_PHOTO_URL = `http://localhost:3000/uploads/retailers/profiles/${retailerData.RET_PHOTO}`;
+      retailerData.RET_PHOTO_URL = `${base_url}/uploads/retailers/profiles/${retailerData.RET_PHOTO}`;
     }
 
     res.json({
@@ -1148,7 +1230,7 @@ const editRetailer = async (req, res) => {
       data: retailerData,
       uploadedFile: req.uploadedFile ? {
         filename: req.uploadedFile.filename,
-        url: `http://localhost:3000/uploads/retailers/profiles/${req.uploadedFile.filename}`
+        url: `${base_url}/uploads/retailers/profiles/${req.uploadedFile.filename}`
       } : null,
       updated_by: req.user.USERNAME,
       updated_fields: updateFields.length - 2 // Exclude UPDATED_DATE and UPDATED_BY from count
@@ -1517,10 +1599,12 @@ const createCustomer = async (req, res) => {
     createDirectory(path.join(__dirname, '../../uploads/retailers/qrcode'));
 
     let qrFileName = null;
+    let qrFullPath = null;
     try {
       // Generate QR code for the phone number
       qrFileName = `qr_${mobile}_${Date.now()}.png`;
       const qrPath = path.join(__dirname, '../../uploads/retailers/qrcode', qrFileName);
+      qrFullPath = `${base_url}/uploads/retailers/qrcode/${qrFileName}`;
       
       // Convert phone to string and add country code
       const phoneWithCode = `+91${mobile.toString()}`;
@@ -1540,7 +1624,7 @@ const createCustomer = async (req, res) => {
       // Continue without QR code if generation fails
     }
 
-    // Insert retailer profile
+    // Insert retailer profile with full QR code URL
     await connection.query(
       `INSERT INTO retailer_info (
         RET_CODE, RET_TYPE, RET_NAME, RET_MOBILE_NO, RET_ADDRESS, RET_PIN_CODE, 
@@ -1565,7 +1649,7 @@ const createCustomer = async (req, res) => {
         long || null,
         req.user.USERNAME,
         req.user.USERNAME,
-        qrFileName
+        qrFullPath
       ]
     );
 
@@ -1742,11 +1826,17 @@ const createCustomerWithMultipleAddresses = async (req, res) => {
     createDirectory(path.join(__dirname, '../../uploads/retailers/qrcode'));
 
     let qrFileName = null;
+    let qrFullPath = null;
     try {
+      // Generate QR code for the phone number
       qrFileName = `qr_${mobile}_${Date.now()}.png`;
       const qrPath = path.join(__dirname, '../../uploads/retailers/qrcode', qrFileName);
+      qrFullPath = `${base_url}/uploads/retailers/qrcode/${qrFileName}`;
+      
+      // Convert phone to string and add country code
       const phoneWithCode = `+91${mobile.toString()}`;
       
+      // Generate QR code
       await QRCode.toFile(qrPath, phoneWithCode, {
         errorCorrectionLevel: 'H',
         width: 500,
@@ -1758,9 +1848,10 @@ const createCustomerWithMultipleAddresses = async (req, res) => {
       });
     } catch (qrError) {
       console.error('QR Code generation error:', qrError);
+      // Continue without QR code if generation fails
     }
 
-    // Insert retailer profile
+    // Insert retailer profile with full QR code URL
     await connection.query(
       `INSERT INTO retailer_info (
         RET_CODE, RET_TYPE, RET_NAME, RET_MOBILE_NO, RET_ADDRESS, RET_PIN_CODE, 
@@ -1785,7 +1876,7 @@ const createCustomerWithMultipleAddresses = async (req, res) => {
         long || null,
         req.user.USERNAME,
         req.user.USERNAME,
-        qrFileName
+        qrFullPath
       ]
     );
 
@@ -2605,6 +2696,904 @@ const getEmployeeDwrDetails = async (req, res) => {
   }
 };
 
+// Customer Leads Management APIs
+const getCustomerLeads = async (req, res) => {
+  try {
+    const { 
+      page = 1, 
+      limit = 10, 
+      type, 
+      status, 
+      city, 
+      state, 
+      search 
+    } = req.query;
+    
+    const offset = (page - 1) * limit;
+
+    // Build WHERE clause dynamically
+    let whereConditions = [];
+    let queryParams = [];
+
+    // Filter by type
+    if (type) {
+      whereConditions.push('CUSTLD_TYPE = ?');
+      queryParams.push(type);
+    }
+
+    // Filter by status
+    if (status) {
+      whereConditions.push('CUSTLD_DEL_STATUS = ?');
+      queryParams.push(status);
+    } else {
+      // Default to active leads only
+      whereConditions.push('CUSTLD_DEL_STATUS = ?');
+      queryParams.push('active');
+    }
+
+    // Filter by city
+    if (city) {
+      whereConditions.push('CUSTLD_CITY = ?');
+      queryParams.push(city);
+    }
+
+    // Filter by state
+    if (state) {
+      whereConditions.push('CUSTLD_STATE = ?');
+      queryParams.push(state);
+    }
+
+    // Search functionality
+    if (search) {
+      whereConditions.push(`(
+        CUSTLD_NAME LIKE ? OR 
+        CUSTLD_SHOP_NAME LIKE ? OR 
+        CUSTLD_MOBILE_NO LIKE ? OR 
+        CUSTLD_EMAIL_ID LIKE ? OR 
+        CUSTLD_ADDRESS LIKE ?
+      )`);
+      const searchPattern = `%${search}%`;
+      queryParams.push(searchPattern, searchPattern, searchPattern, searchPattern, searchPattern);
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+    // Get customer leads with pagination
+    const [leads] = await db.promise().query(
+      `SELECT 
+        CUSTLD_ID,
+        CUSTLD_TYPE,
+        CUSTLD_NAME,
+        CUSTLD_SHOP_NAME,
+        CUSTLD_MOBILE_NO,
+        CUSTLD_ADDRESS,
+        CUSTLD_PIN_CODE,
+        CUSTLD_EMAIL_ID,
+        CUSTLD_COUNTRY,
+        CUSTLD_STATE,
+        CUSTLD_CITY,
+        CUSTLD_GST_NO,
+        CUSTLD_DEL_STATUS,
+        CREATED_DATE,
+        UPDATED_DATE,
+        CREATED_BY,
+        UPDATED_BY
+       FROM cust_lead ${whereClause}
+       ORDER BY CREATED_DATE DESC
+       LIMIT ? OFFSET ?`,
+      [...queryParams, parseInt(limit), offset]
+    );
+
+    // Get total count for pagination
+    const [countResult] = await db.promise().query(
+      `SELECT COUNT(*) as total FROM cust_lead ${whereClause}`,
+      queryParams
+    );
+
+    const totalLeads = countResult[0].total;
+    const totalPages = Math.ceil(totalLeads / limit);
+
+    res.json({
+      success: true,
+      message: 'Customer leads fetched successfully',
+      data: {
+        leads,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: totalPages,
+          totalLeads: totalLeads,
+          limit: parseInt(limit),
+          hasNext: page < totalPages,
+          hasPrev: page > 1
+        },
+        filters: {
+          type: type || null,
+          status: status || 'active',
+          city: city || null,
+          state: state || null,
+          search: search || null
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Get customer leads error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching customer leads',
+      error: error.message
+    });
+  }
+};
+
+const searchCustomerLeads = async (req, res) => {
+  try {
+    const { query, page = 1, limit = 10 } = req.query;
+    const offset = (page - 1) * limit;
+
+    if (!query) {
+      return res.status(400).json({
+        success: false,
+        message: 'Search query is required'
+      });
+    }
+
+    // Search customer leads by multiple fields
+    const [leads] = await db.promise().query(
+      `SELECT 
+        CUSTLD_ID,
+        CUSTLD_TYPE,
+        CUSTLD_NAME,
+        CUSTLD_SHOP_NAME,
+        CUSTLD_MOBILE_NO,
+        CUSTLD_ADDRESS,
+        CUSTLD_PIN_CODE,
+        CUSTLD_EMAIL_ID,
+        CUSTLD_COUNTRY,
+        CUSTLD_STATE,
+        CUSTLD_CITY,
+        CUSTLD_GST_NO,
+        CUSTLD_DEL_STATUS,
+        CREATED_DATE,
+        UPDATED_DATE,
+        CREATED_BY,
+        UPDATED_BY
+       FROM cust_lead 
+       WHERE CUSTLD_DEL_STATUS = 'active'
+       AND (
+         CUSTLD_NAME LIKE ? OR 
+         CUSTLD_SHOP_NAME LIKE ? OR 
+         CUSTLD_MOBILE_NO LIKE ? OR 
+         CUSTLD_EMAIL_ID LIKE ? OR 
+         CUSTLD_ADDRESS LIKE ? OR
+         CUSTLD_CITY LIKE ? OR
+         CUSTLD_STATE LIKE ?
+       )
+       ORDER BY 
+         CASE 
+           WHEN CUSTLD_NAME = ? THEN 1
+           WHEN CUSTLD_MOBILE_NO = ? THEN 1
+           WHEN CUSTLD_NAME LIKE ? THEN 2
+           WHEN CUSTLD_MOBILE_NO LIKE ? THEN 2
+           ELSE 3
+         END,
+         CREATED_DATE DESC
+       LIMIT ? OFFSET ?`,
+      [
+        `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`,
+        query, query, `${query}%`, `${query}%`,
+        parseInt(limit), offset
+      ]
+    );
+
+    // Get total count for pagination
+    const [countResult] = await db.promise().query(
+      `SELECT COUNT(*) as total
+       FROM cust_lead 
+       WHERE CUSTLD_DEL_STATUS = 'active'
+       AND (
+         CUSTLD_NAME LIKE ? OR 
+         CUSTLD_SHOP_NAME LIKE ? OR 
+         CUSTLD_MOBILE_NO LIKE ? OR 
+         CUSTLD_EMAIL_ID LIKE ? OR 
+         CUSTLD_ADDRESS LIKE ? OR
+         CUSTLD_CITY LIKE ? OR
+         CUSTLD_STATE LIKE ?
+       )`,
+      [`%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`]
+    );
+
+    const totalLeads = countResult[0].total;
+    const totalPages = Math.ceil(totalLeads / limit);
+
+    res.json({
+      success: true,
+      message: 'Customer leads search completed',
+      data: {
+        leads: leads,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: totalPages,
+          totalLeads: totalLeads,
+          limit: parseInt(limit),
+          hasNext: page < totalPages,
+          hasPrev: page > 1
+        },
+        searchQuery: query
+      }
+    });
+
+  } catch (error) {
+    console.error('Search customer leads error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error searching customer leads',
+      error: error.message
+    });
+  }
+};
+
+// Customer with Retailer Details Management APIs
+const getCustomersWithRetailerDetails = async (req, res) => {
+  try {
+    const { 
+      page = 1, 
+      limit = 10, 
+      userType, 
+      isActive, 
+      city, 
+      state, 
+      country,
+      retStatus,
+      search 
+    } = req.query;
+    
+    const offset = (page - 1) * limit;
+
+    // Build WHERE clause dynamically
+    let whereConditions = [];
+    let queryParams = [];
+
+    // Filter by user type (default to customer)
+    if (userType) {
+      whereConditions.push('u.USER_TYPE = ?');
+      queryParams.push(userType);
+    } else {
+      whereConditions.push('u.USER_TYPE = ?');
+      queryParams.push('customer');
+    }
+
+    // Filter by active status (default to active users)
+    if (isActive) {
+      whereConditions.push('u.ISACTIVE = ?');
+      queryParams.push(isActive);
+    } else {
+      whereConditions.push('u.ISACTIVE = ?');
+      queryParams.push('Y');
+    }
+
+    // Filter by city
+    if (city) {
+      whereConditions.push('(u.CITY = ? OR r.RET_CITY = ?)');
+      queryParams.push(city, city);
+    }
+
+    // Filter by state
+    if (state) {
+      whereConditions.push('(u.PROVINCE = ? OR r.RET_STATE = ?)');
+      queryParams.push(state, state);
+    }
+
+    // Filter by country
+    if (country) {
+      whereConditions.push('r.RET_COUNTRY = ?');
+      queryParams.push(country);
+    }
+
+    // Filter by retailer status
+    if (retStatus) {
+      whereConditions.push('r.RET_DEL_STATUS = ?');
+      queryParams.push(retStatus);
+    }
+
+    // Search functionality
+    if (search) {
+      whereConditions.push(`(
+        u.USERNAME LIKE ? OR 
+        u.EMAIL LIKE ? OR 
+        u.MOBILE LIKE ? OR 
+        u.ADDRESS LIKE ? OR
+        u.CITY LIKE ? OR
+        r.RET_NAME LIKE ? OR
+        r.RET_SHOP_NAME LIKE ? OR
+        r.RET_ADDRESS LIKE ? OR
+        r.RET_CITY LIKE ? OR
+        r.RET_CODE LIKE ?
+      )`);
+      const searchPattern = `%${search}%`;
+      queryParams.push(searchPattern, searchPattern, searchPattern, searchPattern, searchPattern, 
+                      searchPattern, searchPattern, searchPattern, searchPattern, searchPattern);
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+    // Get customers with retailer details and pagination
+    const [customers] = await db.promise().query(
+      `SELECT 
+        u.USER_ID,
+        u.UL_ID,
+        u.USERNAME,
+        u.EMAIL,
+        u.MOBILE,
+        u.CITY as USER_CITY,
+        u.PROVINCE as USER_PROVINCE,
+        u.ZIP as USER_ZIP,
+        u.ADDRESS as USER_ADDRESS,
+        u.PHOTO as USER_PHOTO,
+        u.FCM_TOKEN,
+        u.CREATED_DATE as USER_CREATED_DATE,
+        u.CREATED_BY as USER_CREATED_BY,
+        u.UPDATED_DATE as USER_UPDATED_DATE,
+        u.UPDATED_BY as USER_UPDATED_BY,
+        u.USER_TYPE,
+        u.ISACTIVE as USER_ISACTIVE,
+        u.is_otp_verify,
+        r.RET_ID,
+        r.RET_CODE,
+        r.RET_TYPE,
+        r.RET_NAME,
+        r.RET_SHOP_NAME,
+        r.RET_MOBILE_NO,
+        r.RET_ADDRESS,
+        r.RET_PIN_CODE,
+        r.RET_EMAIL_ID,
+        r.RET_PHOTO,
+        r.RET_COUNTRY,
+        r.RET_STATE,
+        r.RET_CITY,
+        r.RET_GST_NO,
+        r.RET_LAT,
+        r.RET_LONG,
+        r.RET_DEL_STATUS,
+        r.CREATED_DATE as RET_CREATED_DATE,
+        r.UPDATED_DATE as RET_UPDATED_DATE,
+        r.CREATED_BY as RET_CREATED_BY,
+        r.UPDATED_BY as RET_UPDATED_BY,
+        r.SHOP_OPEN_STATUS,
+        r.BARCODE_URL
+       FROM user_info u 
+       LEFT JOIN retailer_info r ON u.MOBILE = r.RET_MOBILE_NO
+       ${whereClause}
+       ORDER BY u.CREATED_DATE DESC
+       LIMIT ? OFFSET ?`,
+      [...queryParams, parseInt(limit), offset]
+    );
+
+    // Get total count for pagination
+    const [countResult] = await db.promise().query(
+      `SELECT COUNT(*) as total 
+       FROM user_info u 
+       LEFT JOIN retailer_info r ON u.MOBILE = r.RET_MOBILE_NO
+       ${whereClause}`,
+      queryParams
+    );
+
+    const totalCustomers = countResult[0].total;
+    const totalPages = Math.ceil(totalCustomers / limit);
+
+    res.json({
+      success: true,
+      message: 'Customers with retailer details fetched successfully',
+      data: {
+        customers,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: totalPages,
+          totalCustomers: totalCustomers,
+          limit: parseInt(limit),
+          hasNext: page < totalPages,
+          hasPrev: page > 1
+        },
+        filters: {
+          userType: userType || 'customer',
+          isActive: isActive || 'Y',
+          city: city || null,
+          state: state || null,
+          country: country || null,
+          retStatus: retStatus || null,
+          search: search || null
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Get customers with retailer details error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching customers with retailer details',
+      error: error.message
+    });
+  }
+};
+
+const searchCustomersWithRetailerDetails = async (req, res) => {
+  try {
+    const { query, page = 1, limit = 10 } = req.query;
+    const offset = (page - 1) * limit;
+
+    if (!query) {
+      return res.status(400).json({
+        success: false,
+        message: 'Search query is required'
+      });
+    }
+
+    // Search customers with retailer details by multiple fields
+    const [customers] = await db.promise().query(
+      `SELECT 
+        u.USER_ID,
+        u.UL_ID,
+        u.USERNAME,
+        u.EMAIL,
+        u.MOBILE,
+        u.CITY as USER_CITY,
+        u.PROVINCE as USER_PROVINCE,
+        u.ZIP as USER_ZIP,
+        u.ADDRESS as USER_ADDRESS,
+        u.PHOTO as USER_PHOTO,
+        u.FCM_TOKEN,
+        u.CREATED_DATE as USER_CREATED_DATE,
+        u.CREATED_BY as USER_CREATED_BY,
+        u.UPDATED_DATE as USER_UPDATED_DATE,
+        u.UPDATED_BY as USER_UPDATED_BY,
+        u.USER_TYPE,
+        u.ISACTIVE as USER_ISACTIVE,
+        u.is_otp_verify,
+        r.RET_ID,
+        r.RET_CODE,
+        r.RET_TYPE,
+        r.RET_NAME,
+        r.RET_SHOP_NAME,
+        r.RET_MOBILE_NO,
+        r.RET_ADDRESS,
+        r.RET_PIN_CODE,
+        r.RET_EMAIL_ID,
+        r.RET_PHOTO,
+        r.RET_COUNTRY,
+        r.RET_STATE,
+        r.RET_CITY,
+        r.RET_GST_NO,
+        r.RET_LAT,
+        r.RET_LONG,
+        r.RET_DEL_STATUS,
+        r.CREATED_DATE as RET_CREATED_DATE,
+        r.UPDATED_DATE as RET_UPDATED_DATE,
+        r.CREATED_BY as RET_CREATED_BY,
+        r.UPDATED_BY as RET_UPDATED_BY,
+        r.SHOP_OPEN_STATUS,
+        r.BARCODE_URL
+       FROM user_info u 
+       LEFT JOIN retailer_info r ON u.MOBILE = r.RET_MOBILE_NO
+       WHERE u.USER_TYPE = 'customer' 
+       AND u.ISACTIVE = 'Y'
+       AND (
+         u.USERNAME LIKE ? OR 
+         u.EMAIL LIKE ? OR 
+         u.MOBILE LIKE ? OR 
+         u.ADDRESS LIKE ? OR
+         u.CITY LIKE ? OR
+         r.RET_NAME LIKE ? OR
+         r.RET_SHOP_NAME LIKE ? OR
+         r.RET_ADDRESS LIKE ? OR
+         r.RET_CITY LIKE ? OR
+         r.RET_CODE LIKE ?
+       )
+       ORDER BY 
+         CASE 
+           WHEN u.USERNAME = ? THEN 1
+           WHEN u.MOBILE = ? THEN 1
+           WHEN r.RET_NAME = ? THEN 1
+           WHEN u.USERNAME LIKE ? THEN 2
+           WHEN u.MOBILE LIKE ? THEN 2
+           WHEN r.RET_NAME LIKE ? THEN 2
+           ELSE 3
+         END,
+         u.CREATED_DATE DESC
+       LIMIT ? OFFSET ?`,
+      [
+        `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`, 
+        `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`,
+        query, query, query, `${query}%`, `${query}%`, `${query}%`,
+        parseInt(limit), offset
+      ]
+    );
+
+    // Get total count for pagination
+    const [countResult] = await db.promise().query(
+      `SELECT COUNT(*) as total
+       FROM user_info u 
+       LEFT JOIN retailer_info r ON u.MOBILE = r.RET_MOBILE_NO
+       WHERE u.USER_TYPE = 'customer' 
+       AND u.ISACTIVE = 'Y'
+       AND (
+         u.USERNAME LIKE ? OR 
+         u.EMAIL LIKE ? OR 
+         u.MOBILE LIKE ? OR 
+         u.ADDRESS LIKE ? OR
+         u.CITY LIKE ? OR
+         r.RET_NAME LIKE ? OR
+         r.RET_SHOP_NAME LIKE ? OR
+         r.RET_ADDRESS LIKE ? OR
+         r.RET_CITY LIKE ? OR
+         r.RET_CODE LIKE ?
+       )`,
+      [`%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`, 
+       `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`]
+    );
+
+    const totalCustomers = countResult[0].total;
+    const totalPages = Math.ceil(totalCustomers / limit);
+
+    res.json({
+      success: true,
+      message: 'Customers with retailer details search completed',
+      data: {
+        customers: customers,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: totalPages,
+          totalCustomers: totalCustomers,
+          limit: parseInt(limit),
+          hasNext: page < totalPages,
+          hasPrev: page > 1
+        },
+        searchQuery: query
+      }
+    });
+
+  } catch (error) {
+    console.error('Search customers with retailer details error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error searching customers with retailer details',
+      error: error.message
+    });
+  }
+};
+
+// Get low stock and out of stock products for admin
+const getLowStockProducts = async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 20,
+      type = 'all', // 'all', 'out_of_stock', 'low_stock'
+      category,
+      subCategory,
+      sortBy = 'PROD_QOH', // 'PROD_QOH', 'PROD_NAME', 'CREATED_DATE'
+      sortOrder = 'ASC', // 'ASC', 'DESC'
+      search
+    } = req.query;
+
+    const offset = (page - 1) * limit;
+
+    // Build WHERE clause for stock conditions
+    let stockConditions = [];
+    
+    if (type === 'out_of_stock') {
+      stockConditions.push('(p.PROD_QOH IS NULL OR CAST(p.PROD_QOH AS DECIMAL(10,2)) <= 0)');
+    } else if (type === 'low_stock') {
+      stockConditions.push('(CAST(p.PROD_QOH AS DECIMAL(10,2)) > 0 AND CAST(p.PROD_REORDER_LEVEL AS DECIMAL(10,2)) > CAST(p.PROD_QOH AS DECIMAL(10,2)))');
+    } else {
+      // Default: both out of stock and low stock
+      stockConditions.push('(p.PROD_QOH IS NULL OR CAST(p.PROD_QOH AS DECIMAL(10,2)) <= 0 OR CAST(p.PROD_REORDER_LEVEL AS DECIMAL(10,2)) > CAST(p.PROD_QOH AS DECIMAL(10,2)))');
+    }
+
+    // Build additional WHERE conditions
+    let whereConditions = [
+      'p.DEL_STATUS != "Y"',
+      ...stockConditions
+    ];
+    let queryParams = [];
+
+    // Category filter
+    if (category) {
+      whereConditions.push('p.PROD_CAT_ID = ?');
+      queryParams.push(category);
+    }
+
+    // Sub-category filter
+    if (subCategory) {
+      whereConditions.push('p.PROD_SUB_CAT_ID = ?');
+      queryParams.push(subCategory);
+    }
+
+    // Search filter
+    if (search) {
+      whereConditions.push('(p.PROD_NAME LIKE ? OR p.PROD_CODE LIKE ? OR p.PROD_DESC LIKE ?)');
+      const searchPattern = `%${search}%`;
+      queryParams.push(searchPattern, searchPattern, searchPattern);
+    }
+
+    const whereClause = whereConditions.join(' AND ');
+
+    // Validate sort parameters
+    const validSortColumns = ['PROD_QOH', 'PROD_NAME', 'CREATED_DATE', 'PROD_REORDER_LEVEL', 'PROD_MRP'];
+    const validSortOrders = ['ASC', 'DESC'];
+    
+    const validatedSortBy = validSortColumns.includes(sortBy) ? sortBy : 'PROD_QOH';
+    const validatedSortOrder = validSortOrders.includes(sortOrder.toUpperCase()) ? sortOrder.toUpperCase() : 'ASC';
+
+    // Main query to get low stock products
+    const query = `
+      SELECT 
+        p.PROD_ID,
+        p.PROD_SUB_CAT_ID,
+        p.PROD_NAME,
+        p.PROD_CODE,
+        p.PROD_DESC,
+        p.PROD_MRP,
+        p.PROD_SP,
+        p.PROD_REORDER_LEVEL,
+        p.PROD_QOH,
+        p.PROD_HSN_CODE,
+        p.PROD_CGST,
+        p.PROD_IGST,
+        p.PROD_SGST,
+        p.PROD_MFG_DATE,
+        p.PROD_EXPIRY_DATE,
+        p.PROD_MFG_BY,
+        p.PROD_IMAGE_1,
+        p.PROD_IMAGE_2,
+        p.PROD_IMAGE_3,
+        p.PROD_CAT_ID,
+        p.IS_BARCODE_AVAILABLE,
+        p.CREATED_DATE,
+        p.UPDATED_DATE,
+        p.CREATED_BY,
+        p.UPDATED_BY,
+        c.CATEGORY_NAME,
+        sc.SUB_CATEGORY_NAME,
+        CASE 
+          WHEN p.PROD_QOH IS NULL OR CAST(p.PROD_QOH AS DECIMAL(10,2)) <= 0 THEN 'OUT_OF_STOCK'
+          WHEN CAST(p.PROD_REORDER_LEVEL AS DECIMAL(10,2)) > CAST(p.PROD_QOH AS DECIMAL(10,2)) THEN 'LOW_STOCK'
+          ELSE 'NORMAL'
+        END as STOCK_STATUS,
+        CASE 
+          WHEN p.PROD_QOH IS NULL OR CAST(p.PROD_QOH AS DECIMAL(10,2)) <= 0 THEN CAST(p.PROD_REORDER_LEVEL AS DECIMAL(10,2))
+          WHEN CAST(p.PROD_REORDER_LEVEL AS DECIMAL(10,2)) > CAST(p.PROD_QOH AS DECIMAL(10,2)) THEN (CAST(p.PROD_REORDER_LEVEL AS DECIMAL(10,2)) - CAST(p.PROD_QOH AS DECIMAL(10,2)))
+          ELSE 0
+        END as SHORTAGE_QUANTITY
+      FROM product_master p
+      LEFT JOIN category c ON p.PROD_CAT_ID = c.CATEGORY_ID
+      LEFT JOIN sub_category sc ON p.PROD_SUB_CAT_ID = sc.SUB_CATEGORY_ID
+      WHERE ${whereClause}
+      ORDER BY p.${validatedSortBy} ${validatedSortOrder}
+      LIMIT ? OFFSET ?
+    `;
+
+    const [products] = await db.promise().query(query, [...queryParams, parseInt(limit), offset]);
+
+    // Get total count for pagination
+    const countQuery = `
+      SELECT COUNT(*) as total_count 
+      FROM product_master p
+      WHERE ${whereClause}
+    `;
+
+    const [countResult] = await db.promise().query(countQuery, queryParams);
+    const totalCount = countResult[0].total_count;
+
+    // Get statistics
+    const [statsResult] = await db.promise().query(`
+      SELECT 
+        COUNT(CASE WHEN PROD_QOH IS NULL OR CAST(PROD_QOH AS DECIMAL(10,2)) <= 0 THEN 1 END) as out_of_stock_count,
+        COUNT(CASE WHEN CAST(PROD_QOH AS DECIMAL(10,2)) > 0 AND CAST(PROD_REORDER_LEVEL AS DECIMAL(10,2)) > CAST(PROD_QOH AS DECIMAL(10,2)) THEN 1 END) as low_stock_count,
+        COUNT(*) as total_low_stock_products,
+        SUM(CASE WHEN PROD_QOH IS NULL OR CAST(PROD_QOH AS DECIMAL(10,2)) <= 0 THEN 1 ELSE 0 END) +
+        SUM(CASE WHEN CAST(PROD_QOH AS DECIMAL(10,2)) > 0 AND CAST(PROD_REORDER_LEVEL AS DECIMAL(10,2)) > CAST(PROD_QOH AS DECIMAL(10,2)) THEN 1 ELSE 0 END) as combined_count
+      FROM product_master p
+      WHERE p.DEL_STATUS != 'Y' 
+      AND (p.PROD_QOH IS NULL OR CAST(p.PROD_QOH AS DECIMAL(10,2)) <= 0 OR CAST(p.PROD_REORDER_LEVEL AS DECIMAL(10,2)) > CAST(p.PROD_QOH AS DECIMAL(10,2)))
+    `);
+
+    // Get categories for filtering
+    const [categories] = await db.promise().query(`
+      SELECT DISTINCT c.CATEGORY_ID, c.CATEGORY_NAME 
+      FROM category c
+      JOIN product_master p ON c.CATEGORY_ID = p.PROD_CAT_ID
+      WHERE p.DEL_STATUS != 'Y' 
+      AND (p.PROD_QOH IS NULL OR CAST(p.PROD_QOH AS DECIMAL(10,2)) <= 0 OR CAST(p.PROD_REORDER_LEVEL AS DECIMAL(10,2)) > CAST(p.PROD_QOH AS DECIMAL(10,2)))
+      ORDER BY c.CATEGORY_NAME
+    `);
+
+    // Get sub-categories for filtering
+    const [subCategories] = await db.promise().query(`
+      SELECT DISTINCT sc.SUB_CATEGORY_ID, sc.SUB_CATEGORY_NAME, sc.SUB_CATEGORY_CAT_ID
+      FROM sub_category sc
+      JOIN product_master p ON sc.SUB_CATEGORY_ID = p.PROD_SUB_CAT_ID
+      WHERE p.DEL_STATUS != 'Y' 
+      AND (p.PROD_QOH IS NULL OR CAST(p.PROD_QOH AS DECIMAL(10,2)) <= 0 OR CAST(p.PROD_REORDER_LEVEL AS DECIMAL(10,2)) > CAST(p.PROD_QOH AS DECIMAL(10,2)))
+      ORDER BY sc.SUB_CATEGORY_NAME
+    `);
+
+    res.json({
+      success: true,
+      message: 'Low stock products fetched successfully',
+      data: {
+        products,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: Math.ceil(totalCount / limit),
+          totalProducts: totalCount,
+          limit: parseInt(limit),
+          hasNext: page < Math.ceil(totalCount / limit),
+          hasPrev: page > 1
+        },
+        statistics: {
+          outOfStockCount: statsResult[0].out_of_stock_count,
+          lowStockCount: statsResult[0].low_stock_count,
+          totalLowStockProducts: statsResult[0].combined_count
+        },
+        filters: {
+          availableCategories: categories,
+          availableSubCategories: subCategories,
+          appliedFilters: {
+            type: type,
+            category: category || null,
+            subCategory: subCategory || null,
+            search: search || null,
+            sortBy: validatedSortBy,
+            sortOrder: validatedSortOrder
+          }
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Get low stock products error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching low stock products',
+      error: error.message
+    });
+  }
+};
+
+// Update product stock levels (quantity on hand and reorder level)
+const updateProductStock = async (req, res) => {
+  try {
+    const { productId } = req.params;
+    const { PROD_QOH, PROD_REORDER_LEVEL } = req.body;
+
+    // Validate input
+    if (!productId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Product ID is required'
+      });
+    }
+
+    // Check if at least one field is provided
+    if (PROD_QOH === undefined && PROD_REORDER_LEVEL === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: 'At least one field (PROD_QOH or PROD_REORDER_LEVEL) is required'
+      });
+    }
+
+    // Validate numeric values
+    if (PROD_QOH !== undefined) {
+      if (isNaN(PROD_QOH) || PROD_QOH < 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'PROD_QOH must be a non-negative number'
+        });
+      }
+    }
+
+    if (PROD_REORDER_LEVEL !== undefined) {
+      if (isNaN(PROD_REORDER_LEVEL) || PROD_REORDER_LEVEL < 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'PROD_REORDER_LEVEL must be a non-negative number'
+        });
+      }
+    }
+
+    // Check if product exists
+    const [existingProduct] = await db.promise().query(
+      'SELECT PROD_ID, PROD_NAME, PROD_CODE, PROD_QOH, PROD_REORDER_LEVEL FROM product_master WHERE PROD_ID = ? AND DEL_STATUS != "Y"',
+      [productId]
+    );
+
+    if (existingProduct.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Product not found or has been deleted'
+      });
+    }
+
+    const currentProduct = existingProduct[0];
+
+    // Build dynamic update query
+    const updateFields = [];
+    const updateValues = [];
+
+    if (PROD_QOH !== undefined) {
+      updateFields.push('PROD_QOH = ?');
+      updateValues.push(parseFloat(PROD_QOH));
+    }
+
+    if (PROD_REORDER_LEVEL !== undefined) {
+      updateFields.push('PROD_REORDER_LEVEL = ?');
+      updateValues.push(parseFloat(PROD_REORDER_LEVEL));
+    }
+
+    // Add update metadata
+    updateFields.push('UPDATED_BY = ?', 'UPDATED_DATE = NOW()');
+    updateValues.push(req.user.USERNAME);
+
+    // Add productId for WHERE clause
+    updateValues.push(productId);
+
+    // Update the product
+    const updateQuery = `
+      UPDATE product_master 
+      SET ${updateFields.join(', ')}
+      WHERE PROD_ID = ?
+    `;
+
+    await db.promise().query(updateQuery, updateValues);
+
+    // Get updated product details
+    const [updatedProduct] = await db.promise().query(
+      'SELECT PROD_ID, PROD_NAME, PROD_CODE, PROD_QOH, PROD_REORDER_LEVEL, UPDATED_BY, UPDATED_DATE FROM product_master WHERE PROD_ID = ?',
+      [productId]
+    );
+
+    // Calculate stock status
+    const updated = updatedProduct[0];
+    let stockStatus = 'NORMAL';
+    if (updated.PROD_QOH === null || updated.PROD_QOH <= 0) {
+      stockStatus = 'OUT_OF_STOCK';
+    } else if (updated.PROD_REORDER_LEVEL > updated.PROD_QOH) {
+      stockStatus = 'LOW_STOCK';
+    }
+
+    res.json({
+      success: true,
+      message: 'Product stock levels updated successfully',
+      data: {
+        productId: updated.PROD_ID,
+        productName: updated.PROD_NAME,
+        productCode: updated.PROD_CODE,
+        previousValues: {
+          PROD_QOH: currentProduct.PROD_QOH,
+          PROD_REORDER_LEVEL: currentProduct.PROD_REORDER_LEVEL
+        },
+        currentValues: {
+          PROD_QOH: updated.PROD_QOH,
+          PROD_REORDER_LEVEL: updated.PROD_REORDER_LEVEL
+        },
+        stockStatus: stockStatus,
+        shortageQuantity: updated.PROD_REORDER_LEVEL > updated.PROD_QOH ? 
+          (updated.PROD_REORDER_LEVEL - updated.PROD_QOH) : 0,
+        updatedBy: updated.UPDATED_BY,
+        updatedDate: updated.UPDATED_DATE
+      }
+    });
+
+  } catch (error) {
+    console.error('Update product stock error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error updating product stock levels',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   addProduct,
   editProduct,
@@ -2633,5 +3622,12 @@ module.exports = {
   getUserDetails,
   searchAdminEmployeeUsers,
   updateUserStatus,
-  getEmployeeDwrDetails
+  getEmployeeDwrDetails,
+  promoteEmployeeToAdmin,
+  getCustomerLeads,
+  searchCustomerLeads,
+  getCustomersWithRetailerDetails,
+  searchCustomersWithRetailerDetails,
+  getLowStockProducts,
+  updateProductStock
 }; 

@@ -7,7 +7,7 @@ class ApiConfig {
   
   // Environment-specific URLs
   static const Map<Environment, String> _baseUrls = {
-    Environment.development: 'http://192.168.29.96:3000',
+    Environment.development: 'https://api.shoppurs.in',
     Environment.staging: 'https://staging-api.yourapp.com',
     Environment.production: 'https://api.yourapp.com',
     Environment.local: 'http://localhost:3000',
@@ -26,6 +26,16 @@ class ApiConfig {
   static String get authResendOtp => '$baseUrl/api/auth/resend-otp';
   static String get authConfirmOtpForPassword => '$baseUrl/api/auth/confirm-otp-for-password';
   static String get authResetPasswordWithPhone => '$baseUrl/api/auth/reset-password-with-phone';
+  
+  // =============================================================================
+  // USER ENDPOINTS
+  // =============================================================================
+  static String get userUpdateFcmToken => '$baseUrl/api/user/update-fcm-token';
+  
+  // =============================================================================
+  // PAYMENT ENDPOINTS
+  // =============================================================================
+  static String get paymentCreateOrder => '$baseUrl/api/payment/create-order';
   
   // =============================================================================
   // CATEGORY ENDPOINTS
@@ -89,12 +99,21 @@ class ApiConfig {
   static String get adminSearchCustomers => '$baseUrl/api/admin/search-customers';
   static String adminGetCustomerDetails(int customerId) => '$baseUrl/api/admin/get-customer-details/$customerId';
   
+  // Customer with Retailer Details by Admin
+  static String get adminCustomersWithRetailerDetails => '$baseUrl/api/admin/customers-with-retailer-details';
+  static String get adminSearchCustomersWithRetailerDetails => '$baseUrl/api/admin/search-customers-with-retailer-details';
+  
+  // Customer Leads by Admin
+  static String get adminCustomerLeads => '$baseUrl/api/admin/customer-leads';
+  static String get adminSearchCustomerLeads => '$baseUrl/api/admin/search-customer-leads';
+  
   // User Management by Admin
   static String get adminCreateEmployeeUser => '$baseUrl/api/admin/create-employee-user';
   static String get adminCreateAdminUser => '$baseUrl/api/admin/create-admin-user';
   static String get adminSearchAdminEmployeeUsers => '$baseUrl/api/admin/search-admin-employee-users';
   static String adminGetUserDetails(int userId) => '$baseUrl/api/admin/get-user-details/$userId';
   static String adminUpdateUserStatus(int userId) => '$baseUrl/api/admin/update-user-status/$userId';
+  static String adminPromoteEmployeeToAdmin(int userId) => '$baseUrl/api/admin/promote-employee-to-admin/$userId';
   
   // =============================================================================
   // EMPLOYEE ENDPOINTS
@@ -110,6 +129,14 @@ class ApiConfig {
   static String get employeeCreateCustomerWithAddresses => '$baseUrl/api/employee/create-customer-with-addresses';
   static String get employeeSearchCustomers => '$baseUrl/api/employee/search-customers';
   static String employeeGetCustomerDetails(int customerId) => '$baseUrl/api/employee/get-customer-details/$customerId';
+  
+  // Customer with Retailer Details by Employee
+  static String get employeeCustomersWithRetailerDetails => '$baseUrl/api/employee/customers-with-retailer-details';
+  static String get employeeSearchCustomersWithRetailerDetails => '$baseUrl/api/employee/search-customers-with-retailer-details';
+  
+  // Customer Leads by Employee
+  static String get employeeCustomerLeads => '$baseUrl/api/employee/customer-leads';
+  static String get employeeSearchCustomerLeads => '$baseUrl/api/employee/search-customer-leads';
   
   // =============================================================================
   // RETAILER ENDPOINTS
